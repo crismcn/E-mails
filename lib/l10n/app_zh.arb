@@ -6,6 +6,17 @@
   "statError": "异常账号",
   "filterAllGroups": "全部分组",
   "searchHint": "搜索邮箱号",
+  "mailSearchHint": "搜索邮件",
+  "refreshLastUpdated": "上次更新时间：{time}",
+  "@refreshLastUpdated": {
+    "placeholders": { "time": { "type": "String" } }
+  },
+  "mailArchived": "已归档",
+  "mailDeleted": "已删除",
+  "mailMarkedRead": "已标记为已读",
+  "mailMarkedUnread": "已标记为未读",
+  "loadMoreLoading": "加载中...",
+  "loadMoreNoMore": "没有更多邮件",
   "menuImport": "导入",
   "menuSettings": "设置",
   "loadMore": "上拉加载更多",
@@ -19,5 +30,37 @@
   "settingsThemeSystem": "跟随系统",
   "settingsThemeDark": "暗黑",
   "settingsThemeLight": "亮白",
-  "settingsLanguage": "语言"
+  "settingsLanguage": "语言",
+  "importTitle": "导入邮箱",
+  "importCsvSection": "导入 CSV 文件",
+  "importCsvHint": "点击选择 CSV 文件",
+  "importCsvOnly": "仅支持 .csv 格式",
+  "importCsvPicked": "已选择：{name}",
+  "@importCsvPicked": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "importPasteSection": "或 粘贴数据",
+  "importPasteHint": "请粘贴数据，格式如下：\n邮箱----密码----client_id----refresh_token----创建时间\n\nuser1@example.com----123456----xxxx----xxxx----2024-01-01 10:00:00\nuser2@example.com----123456----xxxx----xxxx----2024-01-01 10:00:00",
+  "importFormatSection": "格式说明",
+  "importFieldEmail": "邮箱",
+  "importFieldEmailDesc": "邮箱地址",
+  "importFieldPassword": "密码",
+  "importFieldPasswordDesc": "邮箱密码",
+  "importFieldClientId": "client_id",
+  "importFieldClientIdDesc": "应用客户端 ID",
+  "importFieldRefreshToken": "refresh_token",
+  "importFieldRefreshTokenDesc": "刷新令牌",
+  "importFieldCreatedAt": "创建时间",
+  "importFieldCreatedAtDesc": "如 2024-01-01 10:00:00",
+  "importConfirm": "确认导入",
+  "importEmpty": "请先粘贴数据或选择 CSV 文件",
+  "importNoValid": "未识别到有效数据，请检查格式",
+  "importResultCount": "成功导入 {count} 个邮箱",
+  "@importResultCount": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "importResultInvalid": "，{count} 行格式有误已忽略",
+  "@importResultInvalid": {
+    "placeholders": { "count": { "type": "int" } }
+  }
 }

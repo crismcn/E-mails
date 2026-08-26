@@ -1,3 +1,4 @@
+import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
 
 import '../data/mock_accounts.dart';
@@ -5,7 +6,10 @@ import '../l10n/app_localizations.dart';
 import '../models/account.dart';
 import '../theme/app_palette.dart';
 import '../widgets/account_tile.dart';
+import '../widgets/app_refresh.dart';
 import '../widgets/stat_card.dart';
+import 'import_page.dart';
+import 'mail_list_page.dart';
 import 'settings_page.dart';
 
 /// 首页 —— 邮箱批量管理主界面。
@@ -20,12 +24,12 @@ class _HomePageState extends State<HomePage> {
   /// 模拟分页：共 3 页，加载完即无更多。
   static const int _maxPages = 3;
 
-  final ScrollController _scrollController = ScrollController();
   final List<Account> _items = List<Account>.of(kMockAccounts);
   String _query = '';
   int _page = 1;
-  bool _isLoadingMore = false;
-  bool _isRefreshing = false;
+
+  /// 上次刷新完成时间（下拉刷新头显示）。
+  DateTime _lastUpdated = DateTime.now();
 
   bool get _hasMore => _page < _maxPages;
   bool get _isSearching => _query.trim().isNotEmpty;
@@ -36,42 +40,19 @@ class _HomePageState extends State<HomePage> {
     return _items.where((a) => a.email.toLowerCase().contains(q)).toList();
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _scrollController.addListener(_onScroll);
-  }
-
-  @override
-  void dispose() {
-    _scrollController.removeListener(_onScroll);
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  // __REST__
-  void _onScroll() {
-    if (!_scrollController.hasClients) return;
-    final pos = _scrollController.position;
-    if (pos.pixels >= pos.maxScrollExtent - 120) {
-      _loadMore();
-    }
-  }
-
-  Future<void> _loadMore() async {
-    if (_isLoadingMore || !_hasMore || _isSearching) return;
-    setState(() => _isLoadingMore = true);
+  /// 上滑加载更多 —— 追加下一页；加载完返回 [IndicatorResult.noMore]。
+  Future<IndicatorResult> _onLoad() async {
+    if (!_hasMore) return IndicatorResult.noMore;
     await Future<void>.delayed(const Duration(milliseconds: 800));
-    if (!mounted) return;
+    if (!mounted) return IndicatorResult.success;
     setState(() {
       _items.addAll(_generatePage(_page));
       _page += 1;
-      _isLoadingMore = false;
     });
+    return _hasMore ? IndicatorResult.success : IndicatorResult.noMore;
   }
 
   Future<void> _onRefresh() async {
-    setState(() => _isRefreshing = true);
     await Future<void>.delayed(const Duration(milliseconds: 900));
     if (!mounted) return;
     setState(() {
@@ -79,8 +60,7 @@ class _HomePageState extends State<HomePage> {
         ..clear()
         ..addAll(kMockAccounts);
       _page = 1;
-      _isLoadingMore = false;
-      _isRefreshing = false;
+      _lastUpdated = DateTime.now();
     });
   }
 
@@ -100,7 +80,6 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final showFooter = !_isSearching && (_hasMore || _isLoadingMore);
     return Scaffold(
       backgroundColor: palette.background,
       body: SafeArea(
@@ -112,30 +91,15 @@ class _HomePageState extends State<HomePage> {
             const SizedBox(height: 8),
             const _StatsRow(),
             const SizedBox(height: 20),
-            _SearchBox(
-              onChanged: (value) => setState(() => _query = value),
-            ),
+            _SearchBox(onChanged: (value) => setState(() => _query = value)),
             const SizedBox(height: 8),
             Expanded(
-              child: RefreshIndicator(
+              child: EasyRefresh(
+                header: appRefreshHeader(_lastUpdated),
+                footer: appLoadFooter(),
                 onRefresh: _onRefresh,
-                // 隐藏 Material 悬浮圆环，改用下方 _RefreshHeader 将列表下移并在顶部显示 loading
-                color: Colors.transparent,
-                backgroundColor: Colors.transparent,
-                elevation: 0,
-                child: Column(
-                  children: [
-                    _RefreshHeader(active: _isRefreshing),
-                    Expanded(
-                      child: _AccountList(
-                        controller: _scrollController,
-                        accounts: _filtered,
-                        showFooter: showFooter,
-                        isLoadingMore: _isLoadingMore,
-                      ),
-                    ),
-                  ],
-                ),
+                onLoad: _onLoad,
+                child: _AccountList(accounts: _filtered),
               ),
             ),
           ],
@@ -152,7 +116,7 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+      padding: const EdgeInsets.fromLTRB(20, 8, 16, 14),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -180,28 +144,29 @@ class _HeaderMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final l10n = AppLocalizations.of(context);
+    // 弹层背景 / 文字随主题自适应，选项间细线分割。
+    final menuBg = palette.background;
+    final menuText = palette.textPrimary;
     return PopupMenuButton<String>(
       tooltip: '更多',
       offset: const Offset(0, 40),
-      color: palette.card,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      icon: Icon(
-        Icons.more_horiz,
-        color: palette.textPrimary,
-        size: 26,
-      ),
+      color: menuBg,
+      surfaceTintColor: menuBg,
+      // 浅色、四周发散的柔和阴影。
+      elevation: 20,
+      shadowColor: const Color(0x4B000000),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      icon: _MenuDotsIcon(color: palette.textPrimary),
       onSelected: (value) {
         switch (value) {
           case 'import':
-            // TODO: 打开导入流程
+            Navigator.of(
+              context,
+            ).push(MaterialPageRoute<void>(builder: (_) => const ImportPage()));
             break;
           case 'settings':
             Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const SettingsPage(),
-              ),
+              MaterialPageRoute<void>(builder: (_) => const SettingsPage()),
             );
             break;
         }
@@ -209,28 +174,106 @@ class _HeaderMenu extends StatelessWidget {
       itemBuilder: (context) => [
         PopupMenuItem<String>(
           value: 'import',
-          child: Row(
-            children: [
-              Icon(Icons.file_upload_outlined,
-                  color: palette.textPrimary, size: 20),
-              const SizedBox(width: 12),
-              Text(l10n.menuImport,
-                  style: TextStyle(color: palette.textPrimary, fontSize: 15)),
-            ],
+          height: 52,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          child: _MenuRow(
+            icon: Icons.file_upload_outlined,
+            label: l10n.menuImport,
+            color: menuText,
           ),
         ),
+        const _MenuDivider(),
         PopupMenuItem<String>(
           value: 'settings',
-          child: Row(
-            children: [
-              Icon(Icons.settings_outlined,
-                  color: palette.textPrimary, size: 20),
-              const SizedBox(width: 12),
-              Text(l10n.menuSettings,
-                  style: TextStyle(color: palette.textPrimary, fontSize: 15)),
-            ],
+          height: 52,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          child: _MenuRow(
+            icon: Icons.settings_outlined,
+            label: l10n.menuSettings,
+            color: menuText,
           ),
         ),
+      ],
+    );
+  }
+}
+
+/// 菜单选项之间的分割线 —— 与邮箱列表分隔线保持一致（同色、细、左右缩进 20）。
+class _MenuDivider extends PopupMenuEntry<Never> {
+  const _MenuDivider();
+
+  @override
+  double get height => 1;
+
+  @override
+  bool represents(void value) => false;
+
+  @override
+  State<_MenuDivider> createState() => _MenuDividerState();
+}
+
+class _MenuDividerState extends State<_MenuDivider> {
+  @override
+  Widget build(BuildContext context) {
+    // 分隔线取主题列表分隔色，随明/暗切换，保持与邮箱列表一致的观感。
+    return Divider(
+      color: context.palette.divider,
+      height: 1,
+      thickness: 1,
+      indent: 20,
+      endIndent: 20,
+    );
+  }
+}
+
+/// 菜单项一行：图标 + 文案（颜色随主题自适应）。
+class _MenuRow extends StatelessWidget {
+  const _MenuRow({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: TextStyle(color: color, fontSize: 15, letterSpacing: 1.5),
+        ),
+      ],
+    );
+  }
+}
+
+/// 三点菜单图标 —— 圆点之间留出更明显的间隔。
+class _MenuDotsIcon extends StatelessWidget {
+  const _MenuDotsIcon({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget dot() => Container(
+      width: 4,
+      height: 4,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+    );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        dot(),
+        const SizedBox(width: 6),
+        dot(),
+        const SizedBox(width: 6),
+        dot(),
       ],
     );
   }
@@ -282,8 +325,9 @@ class _SearchBox extends StatelessWidget {
   final ValueChanged<String> onChanged;
 
   /// 规则椭圆：四角同等大圆角，得到两端半圆的胶囊形。
-  static const BorderRadius _pillRadius =
-      BorderRadius.all(Radius.circular(100));
+  static const BorderRadius _pillRadius = BorderRadius.all(
+    Radius.circular(100),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -302,11 +346,16 @@ class _SearchBox extends StatelessWidget {
           fillColor: palette.card,
           hintText: l10n.searchHint,
           hintStyle: TextStyle(color: palette.textSecondary, fontSize: 15),
-          prefixIcon: Icon(Icons.search, color: palette.textSecondary, size: 20),
-          prefixIconConstraints:
-              const BoxConstraints(minWidth: 38, minHeight: 0),
-          contentPadding:
-              const EdgeInsets.fromLTRB(4, 9, 12, 9),
+          prefixIcon: Icon(
+            Icons.search,
+            color: palette.textSecondary,
+            size: 20,
+          ),
+          prefixIconConstraints: const BoxConstraints(
+            minWidth: 38,
+            minHeight: 0,
+          ),
+          contentPadding: const EdgeInsets.fromLTRB(4, 9, 12, 9),
           border: const OutlineInputBorder(
             borderRadius: _pillRadius,
             borderSide: BorderSide.none,
@@ -326,111 +375,36 @@ class _SearchBox extends StatelessWidget {
 }
 
 class _AccountList extends StatelessWidget {
-  const _AccountList({
-    required this.controller,
-    required this.accounts,
-    required this.showFooter,
-    required this.isLoadingMore,
-  });
+  const _AccountList({required this.accounts});
 
-  final ScrollController controller;
   final List<Account> accounts;
-  final bool showFooter;
-  final bool isLoadingMore;
 
   @override
   Widget build(BuildContext context) {
-    final itemCount = accounts.length + (showFooter ? 1 : 0);
     return ListView.separated(
-      controller: controller,
       padding: EdgeInsets.zero,
-      physics: const AlwaysScrollableScrollPhysics(),
-      itemCount: itemCount,
-      separatorBuilder: (context, index) {
-        // footer（加载更多）前不显示分隔线
-        if (showFooter && index == accounts.length - 1) {
-          return const SizedBox.shrink();
-        }
-        return Divider(
-          color: context.palette.divider,
-          height: 1,
-          thickness: 1,
-          indent: 20,
-          endIndent: 20,
+      itemCount: accounts.length,
+      separatorBuilder: (context, index) => Divider(
+        color: context.palette.divider,
+        height: 1,
+        thickness: 1,
+        // 与邮件列表一致：分隔线缩进对齐邮箱文字（外边距 20 + 头像 50 + 间距 14）。
+        indent: 84,
+        endIndent: 20,
+      ),
+      itemBuilder: (context, index) {
+        return AccountTile(
+          account: accounts[index],
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    MailListPage(accountEmail: accounts[index].email),
+              ),
+            );
+          },
         );
       },
-      itemBuilder: (context, index) {
-        if (showFooter && index == accounts.length) {
-          return _LoadMoreFooter(loading: isLoadingMore);
-        }
-        return AccountTile(account: accounts[index], onTap: () {});
-      },
     );
   }
 }
-
-/// 下拉刷新时置于列表顶部的加载头：激活时高度从 0 展开，把列表整体下移并显示转圈。
-class _RefreshHeader extends StatelessWidget {
-  const _RefreshHeader({required this.active});
-
-  final bool active;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return AnimatedSize(
-      duration: const Duration(milliseconds: 260),
-      curve: Curves.easeOut,
-      alignment: Alignment.topCenter,
-      child: SizedBox(
-        height: active ? 56 : 0,
-        width: double.infinity,
-        child: active
-            ? Center(
-                child: SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.4,
-                    valueColor: AlwaysStoppedAnimation<Color>(palette.primary),
-                  ),
-                ),
-              )
-            : null,
-      ),
-    );
-  }
-}
-
-/// 底部「加载更多」提示：加载中转圈，否则显示上拉文案；无更多时整体不渲染。
-class _LoadMoreFooter extends StatelessWidget {
-  const _LoadMoreFooter({required this.loading});
-
-  final bool loading;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 24),
-      child: Center(
-        child: loading
-            ? SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(palette.primary),
-                ),
-              )
-            : Text(
-                AppLocalizations.of(context).loadMore,
-                style: TextStyle(color: palette.textSecondary, fontSize: 13),
-              ),
-      ),
-    );
-  }
-}
-
-
-

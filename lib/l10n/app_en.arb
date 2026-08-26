@@ -6,6 +6,17 @@
   "statError": "Issues",
   "filterAllGroups": "All Groups",
   "searchHint": "Search email",
+  "mailSearchHint": "Search mail",
+  "refreshLastUpdated": "Last updated: {time}",
+  "@refreshLastUpdated": {
+    "placeholders": { "time": { "type": "String" } }
+  },
+  "mailArchived": "Archived",
+  "mailDeleted": "Deleted",
+  "mailMarkedRead": "Marked as read",
+  "mailMarkedUnread": "Marked as unread",
+  "loadMoreLoading": "Loading...",
+  "loadMoreNoMore": "No more mail",
   "menuImport": "Import",
   "menuSettings": "Settings",
   "loadMore": "Pull up to load more",
@@ -19,5 +30,37 @@
   "settingsThemeSystem": "System",
   "settingsThemeDark": "Dark",
   "settingsThemeLight": "Light",
-  "settingsLanguage": "Language"
+  "settingsLanguage": "Language",
+  "importTitle": "Import Emails",
+  "importCsvSection": "Import CSV File",
+  "importCsvHint": "Tap to choose a CSV file",
+  "importCsvOnly": "Only .csv format is supported",
+  "importCsvPicked": "Selected: {name}",
+  "@importCsvPicked": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "importPasteSection": "Or paste data",
+  "importPasteHint": "Paste data in the following format:\nemail----password----client_id----refresh_token----created_at\n\nuser1@example.com----123456----xxxx----xxxx----2024-01-01 10:00:00\nuser2@example.com----123456----xxxx----xxxx----2024-01-01 10:00:00",
+  "importFormatSection": "Format",
+  "importFieldEmail": "email",
+  "importFieldEmailDesc": "Email address",
+  "importFieldPassword": "password",
+  "importFieldPasswordDesc": "Mailbox password",
+  "importFieldClientId": "client_id",
+  "importFieldClientIdDesc": "App client ID",
+  "importFieldRefreshToken": "refresh_token",
+  "importFieldRefreshTokenDesc": "Refresh token",
+  "importFieldCreatedAt": "created_at",
+  "importFieldCreatedAtDesc": "e.g. 2024-01-01 10:00:00",
+  "importConfirm": "Confirm Import",
+  "importEmpty": "Paste data or choose a CSV file first",
+  "importNoValid": "No valid data found, please check the format",
+  "importResultCount": "Imported {count} emails",
+  "@importResultCount": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "importResultInvalid": ", {count} invalid lines ignored",
+  "@importResultInvalid": {
+    "placeholders": { "count": { "type": "int" } }
+  }
 }

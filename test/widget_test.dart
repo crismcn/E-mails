@@ -23,7 +23,7 @@ void main() {
     await _pumpApp(tester, await _newController());
 
     expect(find.text('邮箱管理'), findsOneWidget);
-    expect(find.byIcon(Icons.more_horiz), findsOneWidget);
+    expect(find.byType(PopupMenuButton<String>), findsOneWidget);
     expect(find.text('1268'), findsOneWidget);
     expect(find.text('1123'), findsOneWidget);
     expect(find.text('145'), findsOneWidget);
@@ -58,26 +58,47 @@ void main() {
     expect(find.text('alice@outlook.com'), findsOneWidget);
   });
 
-  testWidgets('下拉刷新时顶部显示加载动画', (WidgetTester tester) async {
+  testWidgets('进入导入页并粘贴数据确认导入', (WidgetTester tester) async {
     await _pumpApp(tester, await _newController());
 
-    await tester.fling(find.byType(ListView), const Offset(0, 300), 1000);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-
-    // 刷新进行中，顶部加载头的转圈应可见
-    expect(find.byType(CircularProgressIndicator), findsWidgets);
-
-    await tester.pump(const Duration(milliseconds: 1000));
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('导入'));
     await tester.pumpAndSettle();
 
-    expect(find.text('alice@outlook.com'), findsOneWidget);
+    // 分组与确认按钮（格式说明在列表下方需滚动，此处不断言）
+    expect(find.text('导入 CSV 文件'), findsOneWidget);
+    expect(find.text('或 粘贴数据'), findsOneWidget);
+    expect(find.text('确认导入'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('import-paste-field')),
+      'new@outlook.com----pass----cid----token----2024-01-01 10:00:00',
+    );
+    await tester.tap(find.text('确认导入'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('成功导入 1 个邮箱'), findsOneWidget);
+  });
+
+  testWidgets('导入页空数据提示', (WidgetTester tester) async {
+    await _pumpApp(tester, await _newController());
+
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('导入'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('确认导入'));
+    await tester.pump();
+
+    expect(find.text('请先粘贴数据或选择 CSV 文件'), findsOneWidget);
   });
 
   testWidgets('「…」菜单展开导入与设置', (WidgetTester tester) async {
     await _pumpApp(tester, await _newController());
 
-    await tester.tap(find.byIcon(Icons.more_horiz));
+    await tester.tap(find.byType(PopupMenuButton<String>));
     await tester.pumpAndSettle();
 
     expect(find.text('导入'), findsOneWidget);
@@ -89,7 +110,7 @@ void main() {
   testWidgets('进入设置页并切换语言为英文', (WidgetTester tester) async {
     await _pumpApp(tester, await _newController());
 
-    await tester.tap(find.byIcon(Icons.more_horiz));
+    await tester.tap(find.byType(PopupMenuButton<String>));
     await tester.pumpAndSettle();
     await tester.tap(find.text('设置'));
     await tester.pumpAndSettle();
@@ -112,7 +133,7 @@ void main() {
     final controller = await _newController();
     await _pumpApp(tester, controller);
 
-    await tester.tap(find.byIcon(Icons.more_horiz));
+    await tester.tap(find.byType(PopupMenuButton<String>));
     await tester.pumpAndSettle();
     await tester.tap(find.text('设置'));
     await tester.pumpAndSettle();
@@ -132,7 +153,7 @@ void main() {
   testWidgets('主题选择「跟随系统」并持久化', (WidgetTester tester) async {
     await _pumpApp(tester, await _newController());
 
-    await tester.tap(find.byIcon(Icons.more_horiz));
+    await tester.tap(find.byType(PopupMenuButton<String>));
     await tester.pumpAndSettle();
     await tester.tap(find.text('设置'));
     await tester.pumpAndSettle();

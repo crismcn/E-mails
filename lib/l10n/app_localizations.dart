@@ -134,6 +134,54 @@ abstract class AppLocalizations {
   /// **'搜索邮箱号'**
   String get searchHint;
 
+  /// No description provided for @mailSearchHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'搜索邮件'**
+  String get mailSearchHint;
+
+  /// No description provided for @refreshLastUpdated.
+  ///
+  /// In zh, this message translates to:
+  /// **'上次更新时间：{time}'**
+  String refreshLastUpdated(String time);
+
+  /// No description provided for @mailArchived.
+  ///
+  /// In zh, this message translates to:
+  /// **'已归档'**
+  String get mailArchived;
+
+  /// No description provided for @mailDeleted.
+  ///
+  /// In zh, this message translates to:
+  /// **'已删除'**
+  String get mailDeleted;
+
+  /// No description provided for @mailMarkedRead.
+  ///
+  /// In zh, this message translates to:
+  /// **'已标记为已读'**
+  String get mailMarkedRead;
+
+  /// No description provided for @mailMarkedUnread.
+  ///
+  /// In zh, this message translates to:
+  /// **'已标记为未读'**
+  String get mailMarkedUnread;
+
+  /// No description provided for @loadMoreLoading.
+  ///
+  /// In zh, this message translates to:
+  /// **'加载中...'**
+  String get loadMoreLoading;
+
+  /// No description provided for @loadMoreNoMore.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有更多邮件'**
+  String get loadMoreNoMore;
+
   /// No description provided for @menuImport.
   ///
   /// In zh, this message translates to:
@@ -217,6 +265,144 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'语言'**
   String get settingsLanguage;
+
+  /// No description provided for @importTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'导入邮箱'**
+  String get importTitle;
+
+  /// No description provided for @importCsvSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'导入 CSV 文件'**
+  String get importCsvSection;
+
+  /// No description provided for @importCsvHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'点击选择 CSV 文件'**
+  String get importCsvHint;
+
+  /// No description provided for @importCsvOnly.
+  ///
+  /// In zh, this message translates to:
+  /// **'仅支持 .csv 格式'**
+  String get importCsvOnly;
+
+  /// No description provided for @importCsvPicked.
+  ///
+  /// In zh, this message translates to:
+  /// **'已选择：{name}'**
+  String importCsvPicked(String name);
+
+  /// No description provided for @importPasteSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'或 粘贴数据'**
+  String get importPasteSection;
+
+  /// No description provided for @importPasteHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'请粘贴数据，格式如下：\n邮箱----密码----client_id----refresh_token----创建时间\n\nuser1@example.com----123456----xxxx----xxxx----2024-01-01 10:00:00\nuser2@example.com----123456----xxxx----xxxx----2024-01-01 10:00:00'**
+  String get importPasteHint;
+
+  /// No description provided for @importFormatSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'格式说明'**
+  String get importFormatSection;
+
+  /// No description provided for @importFieldEmail.
+  ///
+  /// In zh, this message translates to:
+  /// **'邮箱'**
+  String get importFieldEmail;
+
+  /// No description provided for @importFieldEmailDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'邮箱地址'**
+  String get importFieldEmailDesc;
+
+  /// No description provided for @importFieldPassword.
+  ///
+  /// In zh, this message translates to:
+  /// **'密码'**
+  String get importFieldPassword;
+
+  /// No description provided for @importFieldPasswordDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'邮箱密码'**
+  String get importFieldPasswordDesc;
+
+  /// No description provided for @importFieldClientId.
+  ///
+  /// In zh, this message translates to:
+  /// **'client_id'**
+  String get importFieldClientId;
+
+  /// No description provided for @importFieldClientIdDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'应用客户端 ID'**
+  String get importFieldClientIdDesc;
+
+  /// No description provided for @importFieldRefreshToken.
+  ///
+  /// In zh, this message translates to:
+  /// **'refresh_token'**
+  String get importFieldRefreshToken;
+
+  /// No description provided for @importFieldRefreshTokenDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'刷新令牌'**
+  String get importFieldRefreshTokenDesc;
+
+  /// No description provided for @importFieldCreatedAt.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建时间'**
+  String get importFieldCreatedAt;
+
+  /// No description provided for @importFieldCreatedAtDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'如 2024-01-01 10:00:00'**
+  String get importFieldCreatedAtDesc;
+
+  /// No description provided for @importConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'确认导入'**
+  String get importConfirm;
+
+  /// No description provided for @importEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'请先粘贴数据或选择 CSV 文件'**
+  String get importEmpty;
+
+  /// No description provided for @importNoValid.
+  ///
+  /// In zh, this message translates to:
+  /// **'未识别到有效数据，请检查格式'**
+  String get importNoValid;
+
+  /// No description provided for @importResultCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'成功导入 {count} 个邮箱'**
+  String importResultCount(int count);
+
+  /// No description provided for @importResultInvalid.
+  ///
+  /// In zh, this message translates to:
+  /// **'，{count} 行格式有误已忽略'**
+  String importResultInvalid(int count);
 }
 
 class _AppLocalizationsDelegate
