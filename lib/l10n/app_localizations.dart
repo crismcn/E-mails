@@ -206,6 +206,30 @@ abstract class AppLocalizations {
   /// **'未读'**
   String get unread;
 
+  /// No description provided for @mailReplyHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'回复'**
+  String get mailReplyHint;
+
+  /// No description provided for @threadUnread.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 封未读'**
+  String threadUnread(int count);
+
+  /// No description provided for @threadLoadHistory.
+  ///
+  /// In zh, this message translates to:
+  /// **'下拉加载更多历史邮件'**
+  String get threadLoadHistory;
+
+  /// No description provided for @threadLoadHistoryNoMore.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有更多历史邮件'**
+  String get threadLoadHistoryNoMore;
+
   /// No description provided for @statusValid.
   ///
   /// In zh, this message translates to:

@@ -84,24 +84,57 @@ class _HomePageState extends State<HomePage> {
       backgroundColor: palette.background,
       body: SafeArea(
         bottom: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Stack(
           children: [
-            const _Header(),
-            const SizedBox(height: 8),
-            const _StatsRow(),
-            const SizedBox(height: 20),
-            _SearchBox(onChanged: (value) => setState(() => _query = value)),
-            const SizedBox(height: 8),
-            Expanded(
-              child: EasyRefresh(
-                header: appRefreshHeader(_lastUpdated),
-                footer: appLoadFooter(),
-                onRefresh: _onRefresh,
-                onLoad: _onLoad,
-                child: _AccountList(accounts: _filtered),
+            EasyRefresh(
+              // 吸顶头部会盖住浮于内容之上的指示器，故改用 locator 定位到吸顶区下方。
+              header: appRefreshHeader(
+                _lastUpdated,
+                position: IndicatorPosition.locator,
+              ),
+              footer: appLoadFooter(position: IndicatorPosition.locator),
+              onRefresh: _onRefresh,
+              onLoad: _onLoad,
+              child: CustomScrollView(
+                slivers: [
+                  // 汇总 + 搜索框随列表上滑，盖住标题后吸顶固定。
+                  SliverPersistentHeader(
+                    pinned: true,
+                    delegate: _HomeHeaderDelegate(
+                      background: palette.background,
+                      onQueryChanged: (value) => setState(() => _query = value),
+                    ),
+                  ),
+                  const HeaderLocator.sliver(),
+                  SliverList.separated(
+                    itemCount: _filtered.length,
+                    separatorBuilder: (context, index) => Divider(
+                      color: palette.divider,
+                      height: 1,
+                      thickness: 1,
+                      // 与邮件列表一致：分隔线缩进对齐邮箱文字（外边距 20 + 头像 50 + 间距 14）。
+                      indent: 84,
+                      endIndent: 20,
+                    ),
+                    itemBuilder: (context, index) {
+                      final account = _filtered[index];
+                      return AccountTile(
+                        account: account,
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) =>
+                                MailListPage(accountEmail: account.email),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  const FooterLocator.sliver(),
+                ],
               ),
             ),
+            // 右上角「…」菜单 —— 汇总上滑覆盖标题后，它仍固定在原位且可点。
+            const Positioned(top: 8, right: 8, child: _HeaderMenu()),
           ],
         ),
       ),
@@ -110,27 +143,100 @@ class _HomePageState extends State<HomePage> {
 }
 
 // __REST2__
-class _Header extends StatelessWidget {
-  const _Header();
+/// 首页吸顶头部 —— 标题被上移的汇总顶出，汇总/搜索框到顶后吸顶固定。
+///
+/// 折叠量恰为标题条高度：`shrinkOffset` 从 0 增到 [_titleBand] 期间，
+/// 标题、汇总、搜索框作为整体一起上移，标题逐渐滑出顶部（被顶出，而非被覆盖）；
+/// 标题完全移出后进入吸顶态，汇总/搜索框固定不动。
+class _HomeHeaderDelegate extends SliverPersistentHeaderDelegate {
+  const _HomeHeaderDelegate({
+    required this.background,
+    required this.onQueryChanged,
+  });
+
+  /// 头部底色 —— 必须不透明，否则列表滑到吸顶区下方会透出来。
+  final Color background;
+  final ValueChanged<String> onQueryChanged;
+
+  /// 标题条高度（上边距 8 + 标题行 48 + 下边距 14）。
+  static const double _titleBand = 70;
+
+  /// 汇总条高度（上间距 8 + 数值 28 + 间距 6 + 标签 13 + 下间距 20）。
+  static const double _statsBand = 75;
+
+  /// 搜索条高度（输入框 38 + 下间距 8）。
+  static const double _searchBand = 46;
+
+  /// 吸顶后保留的高度 —— 汇总 + 搜索框。
+  static const double _pinnedBand = _statsBand + _searchBand;
+
+  @override
+  double get maxExtent => _titleBand + _pinnedBand;
+
+  @override
+  double get minExtent => _pinnedBand;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    final offset = shrinkOffset > _titleBand ? _titleBand : shrinkOffset;
+    // 标题 + 汇总 + 搜索框作为整体上移 offset：标题被顶出顶部，汇总/搜索框随后吸顶。
+    // OverflowBox 让内容始终以 maxExtent 完整高度布局，不随吸顶收缩的盒子被压扁。
+    return ClipRect(
+      child: ColoredBox(
+        color: background,
+        child: OverflowBox(
+          minHeight: 0,
+          maxHeight: maxExtent,
+          alignment: Alignment.topCenter,
+          child: Transform.translate(
+            offset: Offset(0, -offset),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const _HomeTitle(),
+                const _StatsRow(),
+                _SearchBox(onChanged: onQueryChanged),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(_HomeHeaderDelegate oldDelegate) =>
+      oldDelegate.background != background ||
+      oldDelegate.onQueryChanged != onQueryChanged;
+}
+
+/// 标题 —— 固定高度的标题条，垂直居中，右侧留给常驻的「…」菜单。
+class _HomeTitle extends StatelessWidget {
+  const _HomeTitle();
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 16, 14),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Text(
+    return SizedBox(
+      height: 70,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 72, 14),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
             AppLocalizations.of(context).appTitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: context.palette.textPrimary,
               fontSize: 28,
               fontWeight: FontWeight.w700,
             ),
           ),
-          const _HeaderMenu(),
-        ],
+        ),
       ),
     );
   }
@@ -149,7 +255,7 @@ class _HeaderMenu extends StatelessWidget {
     final menuText = palette.textPrimary;
     return PopupMenuButton<String>(
       tooltip: '更多',
-      offset: const Offset(0, 40),
+      offset: const Offset(-12, 40),
       color: menuBg,
       surfaceTintColor: menuBg,
       // 浅色、四周发散的柔和阴影。
@@ -262,23 +368,26 @@ class _MenuDotsIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Widget dot() => Container(
-      width: 4,
-      height: 4,
+      width: 3,
+      height: 3,
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
-    return Row(
+    return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         dot(),
-        const SizedBox(width: 6),
+        const SizedBox(height: 6),
         dot(),
-        const SizedBox(width: 6),
+        const SizedBox(height: 6),
         dot(),
       ],
     );
   }
 }
 
+/// 汇总条 —— 固定高度（吸顶头部需要确定的 extent），内含三个统计项。
+///
+/// 右侧留出 56 —— 吸顶后汇总会盖到标题条位置，需避开常驻在右上角的「…」菜单。
 class _StatsRow extends StatelessWidget {
   const _StatsRow();
 
@@ -286,9 +395,11 @@ class _StatsRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final l10n = AppLocalizations.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Row(
+    return SizedBox(
+      height: 75,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 76, 20),
+        child: Row(
         children: [
           Expanded(
             child: StatCard(
@@ -312,6 +423,7 @@ class _StatsRow extends StatelessWidget {
             ),
           ),
         ],
+        ),
       ),
     );
   }
@@ -319,6 +431,8 @@ class _StatsRow extends StatelessWidget {
 
 // __REST3__
 /// 搜索框 —— 规则椭圆（胶囊/stadium，两端半圆），按邮箱号过滤。
+///
+/// 固定高度（含底部间距 8），供吸顶头部计算 extent。
 class _SearchBox extends StatelessWidget {
   const _SearchBox({required this.onChanged});
 
@@ -333,9 +447,11 @@ class _SearchBox extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final l10n = AppLocalizations.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
-      child: TextField(
+    return SizedBox(
+      height: 46,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+        child: TextField(
         onChanged: onChanged,
         style: TextStyle(color: palette.textPrimary, fontSize: 15),
         cursorColor: palette.primary,
@@ -369,42 +485,8 @@ class _SearchBox extends StatelessWidget {
             borderSide: BorderSide.none,
           ),
         ),
+        ),
       ),
-    );
-  }
-}
-
-class _AccountList extends StatelessWidget {
-  const _AccountList({required this.accounts});
-
-  final List<Account> accounts;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView.separated(
-      padding: EdgeInsets.zero,
-      itemCount: accounts.length,
-      separatorBuilder: (context, index) => Divider(
-        color: context.palette.divider,
-        height: 1,
-        thickness: 1,
-        // 与邮件列表一致：分隔线缩进对齐邮箱文字（外边距 20 + 头像 50 + 间距 14）。
-        indent: 84,
-        endIndent: 20,
-      ),
-      itemBuilder: (context, index) {
-        return AccountTile(
-          account: accounts[index],
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) =>
-                    MailListPage(accountEmail: accounts[index].email),
-              ),
-            );
-          },
-        );
-      },
     );
   }
 }

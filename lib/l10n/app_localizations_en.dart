@@ -66,6 +66,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get unread => 'Unread';
 
   @override
+  String get mailReplyHint => 'Reply';
+
+  @override
+  String threadUnread(int count) {
+    return '$count unread';
+  }
+
+  @override
+  String get threadLoadHistory => 'Pull down for older mail';
+
+  @override
+  String get threadLoadHistoryNoMore => 'No more history';
+
+  @override
   String get statusValid => 'Valid';
 
   @override

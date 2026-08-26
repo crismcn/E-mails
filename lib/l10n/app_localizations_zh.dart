@@ -66,6 +66,20 @@ class AppLocalizationsZh extends AppLocalizations {
   String get unread => '未读';
 
   @override
+  String get mailReplyHint => '回复';
+
+  @override
+  String threadUnread(int count) {
+    return '$count 封未读';
+  }
+
+  @override
+  String get threadLoadHistory => '下拉加载更多历史邮件';
+
+  @override
+  String get threadLoadHistoryNoMore => '没有更多历史邮件';
+
+  @override
   String get statusValid => '有效';
 
   @override

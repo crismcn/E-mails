@@ -24,6 +24,9 @@ class StatCard extends StatelessWidget {
       children: [
         Text(
           value,
+          // 固定单行：汇总条在吸顶头部中高度确定，换行会溢出。
+          maxLines: 1,
+          softWrap: false,
           style: TextStyle(
             color: valueColor,
             fontSize: 28,
@@ -34,6 +37,8 @@ class StatCard extends StatelessWidget {
         const SizedBox(height: 6),
         Text(
           label,
+          maxLines: 1,
+          softWrap: false,
           style: TextStyle(
             color: palette.textSecondary,
             fontSize: 13,

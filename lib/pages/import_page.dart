@@ -144,7 +144,7 @@ class _Header extends StatelessWidget {
         children: [
           IconButton(
             onPressed: () => Navigator.of(context).maybePop(),
-            icon: Icon(Icons.arrow_back_ios_new,
+            icon: Icon(Icons.arrow_back,
                 color: palette.textPrimary, size: 20),
             splashRadius: 22,
           ),

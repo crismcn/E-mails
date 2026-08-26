@@ -21,6 +21,13 @@
   "menuSettings": "设置",
   "loadMore": "上拉加载更多",
   "unread": "未读",
+  "mailReplyHint": "回复",
+  "threadUnread": "{count} 封未读",
+  "@threadUnread": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "threadLoadHistory": "下拉加载更多历史邮件",
+  "threadLoadHistoryNoMore": "没有更多历史邮件",
   "statusValid": "有效",
   "statusTokenExpired": "Token 过期",
   "statusPasswordError": "密码错误",

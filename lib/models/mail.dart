@@ -43,6 +43,30 @@ class MailPreview {
   }
 }
 
+/// 会话详情中的单条邮件消息 —— 以联系人对话方式展示。
+///
+/// 约定：会话中最后一条为「最近消息」，详细展示；其余为历史消息，简化展示。
+class MailMessage {
+  const MailMessage({
+    required this.sender,
+    required this.time,
+    required this.body,
+    this.unread = false,
+  });
+
+  /// 发件人显示名。
+  final String sender;
+
+  /// 消息时间标签（如 `8/24 15:00`）。
+  final String time;
+
+  /// 邮件正文（详细展示时完整呈现，简化展示时截断为预览）。
+  final String body;
+
+  /// 是否未读 —— 未读消息在发件人名前显示蓝点，并作为「跳转到最新未读」的目标。
+  final bool unread;
+}
+
 /// 头像柔和底色候选 —— 与设计稿观感一致（紫 / 粉 / 青 / 蓝 / 橙）。
 const List<Color> _kAvatarColors = [
   Color(0xFF8E7CC3),

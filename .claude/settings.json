@@ -1,1 +1,14 @@
-{}
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "node .claude/hooks/email-notify.js",
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  }
+}

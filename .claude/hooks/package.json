@@ -1,0 +1,9 @@
+{
+  "name": "claude-code-hooks",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Claude Code 自定义 hooks（任务完成后邮件通知）",
+  "dependencies": {
+    "nodemailer": "^6.9.16"
+  }
+}

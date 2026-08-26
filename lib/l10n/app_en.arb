@@ -21,6 +21,13 @@
   "menuSettings": "Settings",
   "loadMore": "Pull up to load more",
   "unread": "Unread",
+  "mailReplyHint": "Reply",
+  "threadUnread": "{count} unread",
+  "@threadUnread": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "threadLoadHistory": "Pull down for older mail",
+  "threadLoadHistoryNoMore": "No more history",
   "statusValid": "Valid",
   "statusTokenExpired": "Token Expired",
   "statusPasswordError": "Password Error",

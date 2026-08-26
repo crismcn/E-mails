@@ -8,6 +8,7 @@ import '../models/mail.dart';
 import '../theme/app_palette.dart';
 import '../widgets/app_refresh.dart';
 import '../widgets/mail_tile.dart';
+import 'mail_thread_page.dart';
 
 /// 邮件列表页 —— 从首页某个邮箱账号进入，展示该账号的邮件。
 class MailListPage extends StatefulWidget {
@@ -169,7 +170,7 @@ class _Header extends StatelessWidget {
           IconButton(
             onPressed: () => Navigator.of(context).maybePop(),
             icon: Icon(
-              Icons.arrow_back_ios_new,
+              Icons.arrow_back,
               color: palette.textPrimary,
               size: 20,
             ),
@@ -314,7 +315,14 @@ class _MailList extends StatelessWidget {
                   ),
                 ],
               ),
-              child: MailTile(mail: mail, onTap: () {}),
+              child: MailTile(
+                mail: mail,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => MailThreadPage(mail: mail),
+                  ),
+                ),
+              ),
             );
           },
         ),

@@ -1,3 +1,4 @@
+import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -48,12 +49,14 @@ void main() {
   testWidgets('列表支持下拉刷新', (WidgetTester tester) async {
     await _pumpApp(tester, await _newController());
 
-    expect(find.byType(RefreshIndicator), findsOneWidget);
+    expect(find.byType(EasyRefresh), findsOneWidget);
 
-    await tester.fling(find.byType(ListView), const Offset(0, 300), 1000);
+    await tester.fling(find.byType(CustomScrollView), const Offset(0, 300), 1000);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 900));
     await tester.pumpAndSettle();
+    // easy_refresh 的 processedDuration 是一次性 Timer，pumpAndSettle 不会抽干。
+    await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('alice@outlook.com'), findsOneWidget);
   });
