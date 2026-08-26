@@ -1,0 +1,23 @@
+{
+  "@@locale": "zh",
+  "appTitle": "邮箱管理",
+  "statTotal": "总账号",
+  "statValid": "有效账号",
+  "statError": "异常账号",
+  "filterAllGroups": "全部分组",
+  "searchHint": "搜索邮箱号",
+  "menuImport": "导入",
+  "menuSettings": "设置",
+  "loadMore": "上拉加载更多",
+  "unread": "未读",
+  "statusValid": "有效",
+  "statusTokenExpired": "Token 过期",
+  "statusPasswordError": "密码错误",
+  "settingsTitle": "设置",
+  "settingsAppearance": "外观",
+  "settingsTheme": "主题",
+  "settingsThemeSystem": "跟随系统",
+  "settingsThemeDark": "暗黑",
+  "settingsThemeLight": "亮白",
+  "settingsLanguage": "语言"
+}

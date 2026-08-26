@@ -1,0 +1,23 @@
+{
+  "@@locale": "en",
+  "appTitle": "Email Manager",
+  "statTotal": "Total",
+  "statValid": "Valid",
+  "statError": "Issues",
+  "filterAllGroups": "All Groups",
+  "searchHint": "Search email",
+  "menuImport": "Import",
+  "menuSettings": "Settings",
+  "loadMore": "Pull up to load more",
+  "unread": "Unread",
+  "statusValid": "Valid",
+  "statusTokenExpired": "Token Expired",
+  "statusPasswordError": "Password Error",
+  "settingsTitle": "Settings",
+  "settingsAppearance": "Appearance",
+  "settingsTheme": "Theme",
+  "settingsThemeSystem": "System",
+  "settingsThemeDark": "Dark",
+  "settingsThemeLight": "Light",
+  "settingsLanguage": "Language"
+}
