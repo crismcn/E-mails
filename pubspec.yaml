@@ -50,6 +50,16 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
 
+  # 用于从 logo.png 生成 Android/iOS 应用图标。
+  flutter_launcher_icons: ^0.14.4
+
+# 应用图标生成配置：运行 `dart run flutter_launcher_icons` 生成。
+flutter_launcher_icons:
+  android: "ic_launcher"
+  ios: true
+  remove_alpha_ios: true
+  image_path: "logo.png"
+
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
