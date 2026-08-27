@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../data/mock_accounts.dart';
 import '../l10n/app_localizations.dart';
 import '../models/account.dart';
+import '../theme/app_page_route.dart';
 import '../theme/app_palette.dart';
 import '../widgets/account_tile.dart';
 import '../widgets/app_refresh.dart';
@@ -43,7 +44,7 @@ class _HomePageState extends State<HomePage> {
   /// 上滑加载更多 —— 追加下一页；加载完返回 [IndicatorResult.noMore]。
   Future<IndicatorResult> _onLoad() async {
     if (!_hasMore) return IndicatorResult.noMore;
-    await Future<void>.delayed(const Duration(milliseconds: 800));
+    await Future<void>.delayed(const Duration(milliseconds: 400));
     if (!mounted) return IndicatorResult.success;
     setState(() {
       _items.addAll(_generatePage(_page));
@@ -53,7 +54,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _onRefresh() async {
-    await Future<void>.delayed(const Duration(milliseconds: 900));
+    await Future<void>.delayed(const Duration(milliseconds: 400));
     if (!mounted) return;
     setState(() {
       _items
@@ -121,9 +122,8 @@ class _HomePageState extends State<HomePage> {
                       return AccountTile(
                         account: account,
                         onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) =>
-                                MailListPage(accountEmail: account.email),
+                          appRoute<void>(
+                            (_) => MailListPage(accountEmail: account.email),
                           ),
                         ),
                       );
@@ -223,7 +223,7 @@ class _HomeTitle extends StatelessWidget {
     return SizedBox(
       height: 70,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 72, 14),
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 14),
         child: Align(
           alignment: Alignment.centerLeft,
           child: Text(
@@ -232,7 +232,7 @@ class _HomeTitle extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: context.palette.textPrimary,
-              fontSize: 28,
+              fontSize: 24,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -266,14 +266,12 @@ class _HeaderMenu extends StatelessWidget {
       onSelected: (value) {
         switch (value) {
           case 'import':
-            Navigator.of(
-              context,
-            ).push(MaterialPageRoute<void>(builder: (_) => const ImportPage()));
+            Navigator.of(context)
+                .push(appRoute<void>((_) => const ImportPage()));
             break;
           case 'settings':
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const SettingsPage()),
-            );
+            Navigator.of(context)
+                .push(appRoute<void>((_) => const SettingsPage()));
             break;
         }
       },
@@ -386,8 +384,7 @@ class _MenuDotsIcon extends StatelessWidget {
 }
 
 /// 汇总条 —— 固定高度（吸顶头部需要确定的 extent），内含三个统计项。
-///
-/// 右侧留出 56 —— 吸顶后汇总会盖到标题条位置，需避开常驻在右上角的「…」菜单。
+
 class _StatsRow extends StatelessWidget {
   const _StatsRow();
 
@@ -398,31 +395,31 @@ class _StatsRow extends StatelessWidget {
     return SizedBox(
       height: 75,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 76, 20),
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
         child: Row(
-        children: [
-          Expanded(
-            child: StatCard(
-              label: l10n.statTotal,
-              value: '1268',
-              valueColor: palette.primary,
+          children: [
+            Expanded(
+              child: StatCard(
+                label: l10n.statTotal,
+                value: '1268',
+                valueColor: palette.primary,
+              ),
             ),
-          ),
-          Expanded(
-            child: StatCard(
-              label: l10n.statValid,
-              value: '1123',
-              valueColor: palette.primary,
+            Expanded(
+              child: StatCard(
+                label: l10n.statValid,
+                value: '1123',
+                valueColor: palette.primary,
+              ),
             ),
-          ),
-          Expanded(
-            child: StatCard(
-              label: l10n.statError,
-              value: '145',
-              valueColor: palette.statusError,
+            Expanded(
+              child: StatCard(
+                label: l10n.statError,
+                value: '145',
+                valueColor: palette.statusError,
+              ),
             ),
-          ),
-        ],
+          ],
         ),
       ),
     );
@@ -452,39 +449,39 @@ class _SearchBox extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
         child: TextField(
-        onChanged: onChanged,
-        style: TextStyle(color: palette.textPrimary, fontSize: 15),
-        cursorColor: palette.primary,
-        textInputAction: TextInputAction.search,
-        decoration: InputDecoration(
-          isDense: true,
-          filled: true,
-          fillColor: palette.card,
-          hintText: l10n.searchHint,
-          hintStyle: TextStyle(color: palette.textSecondary, fontSize: 15),
-          prefixIcon: Icon(
-            Icons.search,
-            color: palette.textSecondary,
-            size: 20,
+          onChanged: onChanged,
+          style: TextStyle(color: palette.textPrimary, fontSize: 15),
+          cursorColor: palette.primary,
+          textInputAction: TextInputAction.search,
+          decoration: InputDecoration(
+            isDense: true,
+            filled: true,
+            fillColor: palette.card,
+            hintText: l10n.searchHint,
+            hintStyle: TextStyle(color: palette.textSecondary, fontSize: 15),
+            prefixIcon: Icon(
+              Icons.search,
+              color: palette.textSecondary,
+              size: 20,
+            ),
+            prefixIconConstraints: const BoxConstraints(
+              minWidth: 38,
+              minHeight: 0,
+            ),
+            contentPadding: const EdgeInsets.fromLTRB(4, 9, 12, 9),
+            border: const OutlineInputBorder(
+              borderRadius: _pillRadius,
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: const OutlineInputBorder(
+              borderRadius: _pillRadius,
+              borderSide: BorderSide.none,
+            ),
+            focusedBorder: const OutlineInputBorder(
+              borderRadius: _pillRadius,
+              borderSide: BorderSide.none,
+            ),
           ),
-          prefixIconConstraints: const BoxConstraints(
-            minWidth: 38,
-            minHeight: 0,
-          ),
-          contentPadding: const EdgeInsets.fromLTRB(4, 9, 12, 9),
-          border: const OutlineInputBorder(
-            borderRadius: _pillRadius,
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: const OutlineInputBorder(
-            borderRadius: _pillRadius,
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: const OutlineInputBorder(
-            borderRadius: _pillRadius,
-            borderSide: BorderSide.none,
-          ),
-        ),
         ),
       ),
     );

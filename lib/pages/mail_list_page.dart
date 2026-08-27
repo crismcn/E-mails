@@ -5,6 +5,7 @@ import 'package:flutter_slidable/flutter_slidable.dart';
 import '../data/mock_mails.dart';
 import '../l10n/app_localizations.dart';
 import '../models/mail.dart';
+import '../theme/app_page_route.dart';
 import '../theme/app_palette.dart';
 import '../widgets/app_refresh.dart';
 import '../widgets/mail_tile.dart';
@@ -48,7 +49,7 @@ class _MailListPageState extends State<MailListPage> {
 
   /// 下拉刷新 —— 重置为初始邮件、重置分页并记录刷新时间。
   Future<void> _onRefresh() async {
-    await Future<void>.delayed(const Duration(milliseconds: 1000));
+    await Future<void>.delayed(const Duration(milliseconds: 400));
     if (!mounted) return;
     setState(() {
       _items
@@ -62,7 +63,7 @@ class _MailListPageState extends State<MailListPage> {
   /// 上滑加载更多 —— 追加下一页；加载完返回 [IndicatorResult.noMore]。
   Future<IndicatorResult> _onLoad() async {
     if (!_hasMore) return IndicatorResult.noMore;
-    await Future<void>.delayed(const Duration(milliseconds: 800));
+    await Future<void>.delayed(const Duration(milliseconds: 400));
     if (!mounted) return IndicatorResult.success;
     setState(() {
       _items.addAll(_generatePage(_page));
@@ -184,7 +185,7 @@ class _Header extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: palette.textPrimary,
-                fontSize: 26,
+                fontSize: 24,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -317,11 +318,9 @@ class _MailList extends StatelessWidget {
               ),
               child: MailTile(
                 mail: mail,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => MailThreadPage(mail: mail),
-                  ),
-                ),
+                onTap: () => Navigator.of(
+                  context,
+                ).push(appRoute<void>((_) => MailThreadPage(mail: mail))),
               ),
             );
           },

@@ -230,6 +230,48 @@ abstract class AppLocalizations {
   /// **'没有更多历史邮件'**
   String get threadLoadHistoryNoMore;
 
+  /// No description provided for @detailRecipient.
+  ///
+  /// In zh, this message translates to:
+  /// **'收件人：'**
+  String get detailRecipient;
+
+  /// No description provided for @actionReply.
+  ///
+  /// In zh, this message translates to:
+  /// **'回复'**
+  String get actionReply;
+
+  /// No description provided for @actionReplyAll.
+  ///
+  /// In zh, this message translates to:
+  /// **'全部回复'**
+  String get actionReplyAll;
+
+  /// No description provided for @actionForward.
+  ///
+  /// In zh, this message translates to:
+  /// **'转发'**
+  String get actionForward;
+
+  /// No description provided for @actionDelete.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除'**
+  String get actionDelete;
+
+  /// No description provided for @actionMore.
+  ///
+  /// In zh, this message translates to:
+  /// **'更多'**
+  String get actionMore;
+
+  /// No description provided for @linkOpenFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法打开链接'**
+  String get linkOpenFailed;
+
   /// No description provided for @statusValid.
   ///
   /// In zh, this message translates to:

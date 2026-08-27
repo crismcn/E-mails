@@ -1,0 +1,276 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../l10n/app_localizations.dart';
+import '../models/mail.dart';
+import '../theme/app_palette.dart';
+
+/// 邮件消息详情页 —— 从会话页点击某条消息进入，展示完整详情。
+///
+/// 正文支持 HTML 渲染（[MailMessage.htmlBody] 非空时），否则按纯文本渲染；
+/// HTML 中的超链接 / 按钮链接点击后用外部浏览器打开。视觉参照「邮件详情」设计稿。
+class MessageDetailPage extends StatefulWidget {
+  const MessageDetailPage({super.key, required this.message});
+
+  final MailMessage message;
+
+  @override
+  State<MessageDetailPage> createState() => _MessageDetailPageState();
+}
+
+class _MessageDetailPageState extends State<MessageDetailPage> {
+  bool _starred = false;
+
+  /// 打开正文中的链接（超链接 / 按钮）—— 外部浏览器，失败时提示。
+  Future<bool> _openUrl(String url) async {
+    final uri = Uri.tryParse(url);
+    var ok = false;
+    if (uri != null) {
+      ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+    if (!ok && mounted) {
+      final l10n = AppLocalizations.of(context);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(l10n.linkOpenFailed),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(milliseconds: 1600),
+          ),
+        );
+    }
+    return ok;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final message = widget.message;
+    return Scaffold(
+      backgroundColor: palette.background,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _Header(
+              title: message.sender,
+              starred: _starred,
+              onStar: () => setState(() => _starred = !_starred),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _RecipientRow(recipient: message.recipient),
+                    const SizedBox(height: 24),
+                    Text(
+                      message.subject,
+                      style: TextStyle(
+                        color: palette.textPrimary,
+                        fontSize: 27,
+                        fontWeight: FontWeight.w700,
+                        height: 1.25,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      message.fullDate,
+                      style: TextStyle(
+                        color: palette.textSecondary,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    _Body(message: message, onTapUrl: _openUrl),
+                  ],
+                ),
+              ),
+            ),
+            const _ActionBar(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 顶部：返回箭头 + 发件人名（加粗大字）+ 右侧收藏星标。
+class _Header extends StatelessWidget {
+  const _Header({
+    required this.title,
+    required this.starred,
+    required this.onStar,
+  });
+
+  final String title;
+  final bool starred;
+  final VoidCallback onStar;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: () => Navigator.of(context).maybePop(),
+            icon: Icon(Icons.arrow_back, color: palette.textPrimary, size: 20),
+            splashRadius: 22,
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: palette.textPrimary,
+                fontSize: 24,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed: onStar,
+            splashRadius: 22,
+            icon: Icon(
+              starred ? Icons.star : Icons.star_border,
+              color: starred ? palette.statusWarning : palette.textPrimary,
+              size: 26,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 收件人行 —— `收件人：` 灰字 + 邮箱蓝色。
+class _RecipientRow extends StatelessWidget {
+  const _RecipientRow({required this.recipient});
+
+  final String recipient;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final l10n = AppLocalizations.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        Text(
+          l10n.detailRecipient,
+          style: TextStyle(color: palette.textSecondary, fontSize: 17),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            '$recipient;',
+            style: TextStyle(
+              color: palette.primary,
+              fontSize: 17,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 正文 —— HTML 优先渲染（含链接点击），否则纯文本。
+class _Body extends StatelessWidget {
+  const _Body({required this.message, required this.onTapUrl});
+
+  final MailMessage message;
+  final Future<bool> Function(String) onTapUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final html = message.htmlBody;
+    if (html != null) {
+      return HtmlWidget(
+        html,
+        onTapUrl: onTapUrl,
+        textStyle: TextStyle(
+          color: palette.textPrimary,
+          fontSize: 17,
+          height: 1.55,
+        ),
+      );
+    }
+    return SelectableText(
+      message.body,
+      style: TextStyle(color: palette.textPrimary, fontSize: 17, height: 1.55),
+    );
+  }
+}
+
+/// 底部操作栏 —— 回复 / 全部回复 / 转发 / 删除 / 更多。
+class _ActionBar extends StatelessWidget {
+  const _ActionBar();
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final l10n = AppLocalizations.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: palette.background,
+        border: Border(top: BorderSide(color: palette.divider, width: 1)),
+      ),
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _ActionItem(icon: Icons.reply_outlined, label: l10n.actionReply),
+          _ActionItem(
+            icon: Icons.reply_all_outlined,
+            label: l10n.actionReplyAll,
+          ),
+          _ActionItem(icon: Icons.forward_outlined, label: l10n.actionForward),
+          _ActionItem(icon: Icons.delete_outline, label: l10n.actionDelete),
+          _ActionItem(icon: Icons.more_vert, label: l10n.actionMore),
+        ],
+      ),
+    );
+  }
+}
+
+/// 单个底部操作 —— 竖排图标 + 文案。
+class _ActionItem extends StatelessWidget {
+  const _ActionItem({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return InkWell(
+      onTap: () {},
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: palette.textPrimary, size: 24),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(color: palette.textPrimary, fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

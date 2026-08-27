@@ -52,6 +52,10 @@ class MailMessage {
     required this.time,
     required this.body,
     this.unread = false,
+    this.recipient = '',
+    this.subject = '',
+    this.fullDate = '',
+    this.htmlBody,
   });
 
   /// 发件人显示名。
@@ -60,11 +64,23 @@ class MailMessage {
   /// 消息时间标签（如 `8/24 15:00`）。
   final String time;
 
-  /// 邮件正文（详细展示时完整呈现，简化展示时截断为预览）。
+  /// 邮件正文（详细展示时完整呈现，简化展示时截断为预览；也是详情页纯文本回退）。
   final String body;
 
   /// 是否未读 —— 未读消息在发件人名前显示蓝点，并作为「跳转到最新未读」的目标。
   final bool unread;
+
+  /// 收件人邮箱（详情页「收件人：」行）。
+  final String recipient;
+
+  /// 邮件主题（详情页大标题）。
+  final String subject;
+
+  /// 完整日期（详情页副标题，如 `2026年8月21日周五 21:42`）。
+  final String fullDate;
+
+  /// 富文本 HTML 正文；为 null 时详情页用 [body] 走纯文本渲染。
+  final String? htmlBody;
 }
 
 /// 头像柔和底色候选 —— 与设计稿观感一致（紫 / 粉 / 青 / 蓝 / 橙）。

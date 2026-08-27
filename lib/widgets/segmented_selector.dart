@@ -36,7 +36,7 @@ class SegmentedSelector extends StatelessWidget {
         children: [
           // 滑动高亮指示块
           AnimatedAlign(
-            duration: const Duration(milliseconds: 260),
+            duration: const Duration(milliseconds: 160),
             curve: Curves.easeOutCubic,
             alignment: Alignment(alignX, 0),
             child: FractionallySizedBox(
@@ -62,7 +62,7 @@ class SegmentedSelector extends StatelessWidget {
                       onTap: () => onChanged(i),
                       child: Center(
                         child: AnimatedDefaultTextStyle(
-                          duration: const Duration(milliseconds: 260),
+                          duration: const Duration(milliseconds: 160),
                           curve: Curves.easeOut,
                           style: TextStyle(
                             color: i == selectedIndex

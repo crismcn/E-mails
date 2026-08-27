@@ -80,6 +80,27 @@ class AppLocalizationsZh extends AppLocalizations {
   String get threadLoadHistoryNoMore => '没有更多历史邮件';
 
   @override
+  String get detailRecipient => '收件人：';
+
+  @override
+  String get actionReply => '回复';
+
+  @override
+  String get actionReplyAll => '全部回复';
+
+  @override
+  String get actionForward => '转发';
+
+  @override
+  String get actionDelete => '删除';
+
+  @override
+  String get actionMore => '更多';
+
+  @override
+  String get linkOpenFailed => '无法打开链接';
+
+  @override
   String get statusValid => '有效';
 
   @override

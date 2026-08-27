@@ -80,6 +80,27 @@ class AppLocalizationsEn extends AppLocalizations {
   String get threadLoadHistoryNoMore => 'No more history';
 
   @override
+  String get detailRecipient => 'To:';
+
+  @override
+  String get actionReply => 'Reply';
+
+  @override
+  String get actionReplyAll => 'Reply all';
+
+  @override
+  String get actionForward => 'Forward';
+
+  @override
+  String get actionDelete => 'Delete';
+
+  @override
+  String get actionMore => 'More';
+
+  @override
+  String get linkOpenFailed => 'Could not open link';
+
+  @override
   String get statusValid => 'Valid';
 
   @override

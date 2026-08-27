@@ -20,7 +20,7 @@ Header appRefreshHeader(
     triggerOffset: 90,
     clamping: false,
     position: position,
-    processedDuration: const Duration(milliseconds: 300),
+    processedDuration: const Duration(milliseconds: 150),
     builder: (context, state) =>
         _AppRefreshHeaderView(state: state, lastUpdated: lastUpdated),
   );
@@ -80,7 +80,7 @@ Footer appLoadFooter({IndicatorPosition position = IndicatorPosition.above}) {
     triggerOffset: 70,
     clamping: false,
     position: position,
-    processedDuration: const Duration(milliseconds: 300),
+    processedDuration: const Duration(milliseconds: 150),
     builder: (context, state) => _LoadIndicatorView(
       state: state,
       idleText: (l10n) => l10n.loadMore,
@@ -98,7 +98,7 @@ Header appHistoryHeader() {
     triggerOffset: 70,
     clamping: false,
     position: IndicatorPosition.above,
-    processedDuration: const Duration(milliseconds: 300),
+    processedDuration: const Duration(milliseconds: 150),
     builder: (context, state) => _LoadIndicatorView(
       state: state,
       idleText: (l10n) => l10n.threadLoadHistory,

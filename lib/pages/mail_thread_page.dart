@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import '../data/mock_thread.dart';
 import '../l10n/app_localizations.dart';
 import '../models/mail.dart';
+import '../theme/app_page_route.dart';
 import '../theme/app_palette.dart';
 import '../widgets/app_refresh.dart';
+import 'message_detail_page.dart';
 
 /// 邮件会话详情页 —— 从邮件列表项进入，以联系人对话方式展示邮件消息。
 ///
@@ -49,7 +51,7 @@ class _MailThreadPageState extends State<MailThreadPage> {
   /// 下拉加载更早的历史消息 —— 整页插入列表头部以保持时间正序。
   Future<IndicatorResult> _onLoadHistory() async {
     if (!_hasMoreHistory) return IndicatorResult.noMore;
-    await Future<void>.delayed(const Duration(milliseconds: 800));
+    await Future<void>.delayed(const Duration(milliseconds: 400));
     if (!mounted) return IndicatorResult.success;
     setState(() {
       _historyPage += 1;
@@ -69,7 +71,7 @@ class _MailThreadPageState extends State<MailThreadPage> {
       await Scrollable.ensureVisible(
         built,
         alignment: 0.05,
-        duration: const Duration(milliseconds: 320),
+        duration: const Duration(milliseconds: 200),
         curve: Curves.easeOut,
       );
       return;
@@ -82,7 +84,7 @@ class _MailThreadPageState extends State<MailThreadPage> {
     if (estimate > maxExtent) estimate = maxExtent;
     await _scrollController.animateTo(
       estimate,
-      duration: const Duration(milliseconds: 320),
+      duration: const Duration(milliseconds: 200),
       curve: Curves.easeOut,
     );
     if (!mounted) return;
@@ -91,7 +93,7 @@ class _MailThreadPageState extends State<MailThreadPage> {
     await Scrollable.ensureVisible(
       ctx,
       alignment: 0.05,
-      duration: const Duration(milliseconds: 200),
+      duration: const Duration(milliseconds: 140),
       curve: Curves.easeOut,
     );
   }
@@ -178,7 +180,7 @@ class _Header extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: palette.textPrimary,
-                fontSize: 28,
+                fontSize: 24,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -252,7 +254,13 @@ class _MessageItem extends StatelessWidget {
                     ],
                   ),
                 ),
-                _Bubble(body: message.body, detailed: detailed),
+                _Bubble(
+                  body: message.body,
+                  detailed: detailed,
+                  onTap: () => Navigator.of(context).push(
+                    appRoute<void>((_) => MessageDetailPage(message: message)),
+                  ),
+                ),
               ],
             ),
           ),
@@ -290,28 +298,43 @@ class _Avatar extends StatelessWidget {
   }
 }
 
-/// 消息气泡 —— 浅灰圆角。详细展示完整正文，简化展示截断为 2 行。
+/// 消息气泡 —— 浅灰圆角。详细展示完整正文，简化展示截断为 2 行。点击进入详情。
 class _Bubble extends StatelessWidget {
-  const _Bubble({required this.body, required this.detailed});
+  const _Bubble({
+    required this.body,
+    required this.detailed,
+    required this.onTap,
+  });
 
   final String body;
   final bool detailed;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: palette.card,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Text(
-        body,
-        maxLines: detailed ? null : 2,
-        overflow: detailed ? TextOverflow.clip : TextOverflow.ellipsis,
-        style: TextStyle(color: palette.textPrimary, fontSize: 16, height: 1.6),
+    return Material(
+      color: palette.card,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: SizedBox(
+            width: double.infinity,
+            child: Text(
+              body,
+              maxLines: detailed ? null : 2,
+              overflow: detailed ? TextOverflow.clip : TextOverflow.ellipsis,
+              style: TextStyle(
+                color: palette.textPrimary,
+                fontSize: 16,
+                height: 1.6,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
