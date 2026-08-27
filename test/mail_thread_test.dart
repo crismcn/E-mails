@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:email_manager/api/api_service.dart';
+import 'package:email_manager/core/auth/credentials_store.dart';
 import 'package:email_manager/main.dart';
 import 'package:email_manager/settings/settings_controller.dart';
 
@@ -16,7 +18,18 @@ Future<void> _pumpThread(WidgetTester tester) async {
 
   SharedPreferences.setMockInitialValues(const {});
   final prefs = await SharedPreferences.getInstance();
-  await tester.pumpWidget(EmailManagerApp(settings: SettingsController(prefs)));
+  final api = ApiService.create(
+    credentialsStore: InMemoryCredentialsStore(const [
+      AccountCredentials(
+        email: 'alice@outlook.com',
+        clientId: 'c',
+        refreshToken: 'r',
+      ),
+    ]),
+  );
+  await tester.pumpWidget(
+    EmailManagerApp(settings: SettingsController(prefs), api: api),
+  );
   await tester.pumpAndSettle();
 
   await tester.tap(find.text('alice@outlook.com'));

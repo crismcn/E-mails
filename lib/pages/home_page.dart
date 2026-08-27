@@ -1,7 +1,7 @@
 import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
 
-import '../data/mock_accounts.dart';
+import '../api/api_scope.dart';
 import '../l10n/app_localizations.dart';
 import '../models/account.dart';
 import '../theme/app_page_route.dart';
@@ -22,18 +22,19 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  /// 模拟分页：共 3 页，加载完即无更多。
-  static const int _maxPages = 3;
-
-  final List<Account> _items = List<Account>.of(kMockAccounts);
+  final List<Account> _items = <Account>[];
   String _query = '';
-  int _page = 1;
+  bool _loaded = false;
 
   /// 上次刷新完成时间（下拉刷新头显示）。
   DateTime _lastUpdated = DateTime.now();
 
-  bool get _hasMore => _page < _maxPages;
   bool get _isSearching => _query.trim().isNotEmpty;
+
+  int get _validCount =>
+      _items.where((a) => a.status == AccountStatus.valid).length;
+  int get _errorCount =>
+      _items.where((a) => a.status != AccountStatus.valid).length;
 
   List<Account> get _filtered {
     if (!_isSearching) return _items;
@@ -41,41 +42,43 @@ class _HomePageState extends State<HomePage> {
     return _items.where((a) => a.email.toLowerCase().contains(q)).toList();
   }
 
-  /// 上滑加载更多 —— 追加下一页；加载完返回 [IndicatorResult.noMore]。
-  Future<IndicatorResult> _onLoad() async {
-    if (!_hasMore) return IndicatorResult.noMore;
-    await Future<void>.delayed(const Duration(milliseconds: 400));
-    if (!mounted) return IndicatorResult.success;
-    setState(() {
-      _items.addAll(_generatePage(_page));
-      _page += 1;
-    });
-    return _hasMore ? IndicatorResult.success : IndicatorResult.noMore;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 首帧依赖就绪后载入一次已持久化的账号（ApiScope 在根部提供）。
+    if (!_loaded) {
+      _loaded = true;
+      _load();
+    }
   }
 
-  Future<void> _onRefresh() async {
-    await Future<void>.delayed(const Duration(milliseconds: 400));
+  /// 从安全存储载入已导入的账号邮箱，转成展示用 [Account]。
+  ///
+  /// 状态/未读数暂无来源（健康检查与 Graph 拉取为后续任务），
+  /// 载入的账号一律先按「有效 / Graph / 未读未知」占位展示。
+  Future<void> _load() async {
+    final emails = await ApiScope.of(context).knownAccounts();
     if (!mounted) return;
+    emails.sort();
     setState(() {
       _items
         ..clear()
-        ..addAll(kMockAccounts);
-      _page = 1;
+        ..addAll(
+          emails.map(
+            (email) => Account(
+              email: email,
+              status: AccountStatus.valid,
+              protocol: MailProtocol.graph,
+              unread: null,
+            ),
+          ),
+        );
       _lastUpdated = DateTime.now();
     });
   }
 
-  /// 生成第 [page] 页的模拟数据（邮箱号唯一）。
-  List<Account> _generatePage(int page) {
-    return [
-      for (int i = 0; i < kMockAccounts.length; i++)
-        Account(
-          email: 'user$page${i + 1}@outlook.com',
-          status: kMockAccounts[i].status,
-          protocol: kMockAccounts[i].protocol,
-          unread: kMockAccounts[i].unread,
-        ),
-    ];
+  Future<void> _onRefresh() async {
+    await _load();
   }
 
   @override
@@ -93,9 +96,7 @@ class _HomePageState extends State<HomePage> {
                 _lastUpdated,
                 position: IndicatorPosition.locator,
               ),
-              footer: appLoadFooter(position: IndicatorPosition.locator),
               onRefresh: _onRefresh,
-              onLoad: _onLoad,
               child: CustomScrollView(
                 slivers: [
                   // 汇总 + 搜索框随列表上滑，盖住标题后吸顶固定。
@@ -103,6 +104,9 @@ class _HomePageState extends State<HomePage> {
                     pinned: true,
                     delegate: _HomeHeaderDelegate(
                       background: palette.background,
+                      total: _items.length,
+                      valid: _validCount,
+                      error: _errorCount,
                       onQueryChanged: (value) => setState(() => _query = value),
                     ),
                   ),
@@ -129,12 +133,11 @@ class _HomePageState extends State<HomePage> {
                       );
                     },
                   ),
-                  const FooterLocator.sliver(),
                 ],
               ),
             ),
             // 右上角「…」菜单 —— 汇总上滑覆盖标题后，它仍固定在原位且可点。
-            const Positioned(top: 8, right: 8, child: _HeaderMenu()),
+            Positioned(top: 8, right: 8, child: _HeaderMenu(onImported: _load)),
           ],
         ),
       ),
@@ -151,11 +154,17 @@ class _HomePageState extends State<HomePage> {
 class _HomeHeaderDelegate extends SliverPersistentHeaderDelegate {
   const _HomeHeaderDelegate({
     required this.background,
+    required this.total,
+    required this.valid,
+    required this.error,
     required this.onQueryChanged,
   });
 
   /// 头部底色 —— 必须不透明，否则列表滑到吸顶区下方会透出来。
   final Color background;
+  final int total;
+  final int valid;
+  final int error;
   final ValueChanged<String> onQueryChanged;
 
   /// 标题条高度（上边距 8 + 标题行 48 + 下边距 14）。
@@ -198,7 +207,7 @@ class _HomeHeaderDelegate extends SliverPersistentHeaderDelegate {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const _HomeTitle(),
-                const _StatsRow(),
+                _StatsRow(total: total, valid: valid, error: error),
                 _SearchBox(onChanged: onQueryChanged),
               ],
             ),
@@ -211,6 +220,9 @@ class _HomeHeaderDelegate extends SliverPersistentHeaderDelegate {
   @override
   bool shouldRebuild(_HomeHeaderDelegate oldDelegate) =>
       oldDelegate.background != background ||
+      oldDelegate.total != total ||
+      oldDelegate.valid != valid ||
+      oldDelegate.error != error ||
       oldDelegate.onQueryChanged != onQueryChanged;
 }
 
@@ -244,7 +256,10 @@ class _HomeTitle extends StatelessWidget {
 
 /// 右上角「…」菜单：导入 / 设置。
 class _HeaderMenu extends StatelessWidget {
-  const _HeaderMenu();
+  const _HeaderMenu({required this.onImported});
+
+  /// 导入页返回后回调 —— 触发首页重新载入已存账号。
+  final VoidCallback onImported;
 
   @override
   Widget build(BuildContext context) {
@@ -263,11 +278,13 @@ class _HeaderMenu extends StatelessWidget {
       shadowColor: const Color(0x4B000000),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       icon: _MenuDotsIcon(color: palette.textPrimary),
-      onSelected: (value) {
+      onSelected: (value) async {
         switch (value) {
           case 'import':
-            Navigator.of(context)
+            await Navigator.of(context)
                 .push(appRoute<void>((_) => const ImportPage()));
+            // 导入页可能已持久化新账号，回来重新载入列表。
+            onImported();
             break;
           case 'settings':
             Navigator.of(context)
@@ -386,7 +403,15 @@ class _MenuDotsIcon extends StatelessWidget {
 /// 汇总条 —— 固定高度（吸顶头部需要确定的 extent），内含三个统计项。
 
 class _StatsRow extends StatelessWidget {
-  const _StatsRow();
+  const _StatsRow({
+    required this.total,
+    required this.valid,
+    required this.error,
+  });
+
+  final int total;
+  final int valid;
+  final int error;
 
   @override
   Widget build(BuildContext context) {
@@ -401,21 +426,21 @@ class _StatsRow extends StatelessWidget {
             Expanded(
               child: StatCard(
                 label: l10n.statTotal,
-                value: '1268',
+                value: '$total',
                 valueColor: palette.primary,
               ),
             ),
             Expanded(
               child: StatCard(
                 label: l10n.statValid,
-                value: '1123',
+                value: '$valid',
                 valueColor: palette.primary,
               ),
             ),
             Expanded(
               child: StatCard(
                 label: l10n.statError,
-                value: '145',
+                value: '$error',
                 valueColor: palette.statusError,
               ),
             ),

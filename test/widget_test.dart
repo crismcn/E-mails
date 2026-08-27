@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:email_manager/api/api_service.dart';
+import 'package:email_manager/core/auth/credentials_store.dart';
 import 'package:email_manager/main.dart';
 import 'package:email_manager/settings/settings_controller.dart';
 
@@ -14,8 +16,37 @@ Future<SettingsController> _newController([
   return SettingsController(prefs);
 }
 
-Future<void> _pumpApp(WidgetTester tester, SettingsController settings) async {
-  await tester.pumpWidget(EmailManagerApp(settings: settings));
+/// 内存版组合根 —— 预置若干已导入账号，免平台通道。
+ApiService _seededApi([Iterable<AccountCredentials> seed = _kSeed]) {
+  return ApiService.create(credentialsStore: InMemoryCredentialsStore(seed));
+}
+
+const List<AccountCredentials> _kSeed = [
+  AccountCredentials(
+    email: 'alice@outlook.com',
+    clientId: 'c',
+    refreshToken: 'r',
+  ),
+  AccountCredentials(
+    email: 'tom@outlook.com',
+    clientId: 'c',
+    refreshToken: 'r',
+  ),
+  AccountCredentials(
+    email: 'william@outlook.com',
+    clientId: 'c',
+    refreshToken: 'r',
+  ),
+];
+
+Future<void> _pumpApp(
+  WidgetTester tester,
+  SettingsController settings, {
+  ApiService? api,
+}) async {
+  await tester.pumpWidget(
+    EmailManagerApp(settings: settings, api: api ?? _seededApi()),
+  );
   await tester.pumpAndSettle();
 }
 
@@ -25,11 +56,11 @@ void main() {
 
     expect(find.text('邮箱管理'), findsOneWidget);
     expect(find.byType(PopupMenuButton<String>), findsOneWidget);
-    expect(find.text('1268'), findsOneWidget);
-    expect(find.text('1123'), findsOneWidget);
-    expect(find.text('145'), findsOneWidget);
+    // 汇总取自实际载入的账号数：3 个全部占位为有效、错误 0。
+    expect(find.text('3'), findsNWidgets(2));
+    expect(find.text('0'), findsOneWidget);
 
-    // 搜索框与列表项
+    // 搜索框与列表项（来自已持久化的账号）
     expect(find.text('搜索邮箱号'), findsOneWidget);
     expect(find.text('alice@outlook.com'), findsOneWidget);
   });
@@ -51,7 +82,11 @@ void main() {
 
     expect(find.byType(EasyRefresh), findsOneWidget);
 
-    await tester.fling(find.byType(CustomScrollView), const Offset(0, 300), 1000);
+    await tester.fling(
+      find.byType(CustomScrollView),
+      const Offset(0, 300),
+      1000,
+    );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 900));
     await tester.pumpAndSettle();
@@ -131,8 +166,7 @@ void main() {
     expect(find.text('Light'), findsOneWidget);
   });
 
-  testWidgets('设置持久化：切换后新建 controller 仍保留选择',
-      (WidgetTester tester) async {
+  testWidgets('设置持久化：切换后新建 controller 仍保留选择', (WidgetTester tester) async {
     final controller = await _newController();
     await _pumpApp(tester, controller);
 
@@ -173,8 +207,7 @@ void main() {
     expect(SettingsController(prefs).themeMode, ThemeMode.system);
   });
 
-  testWidgets('启动时读取已持久化的设置（英文+亮色）',
-      (WidgetTester tester) async {
+  testWidgets('启动时读取已持久化的设置（英文+亮色）', (WidgetTester tester) async {
     final controller = await _newController({
       'settings.themeMode': 'light',
       'settings.locale': 'en',

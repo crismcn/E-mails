@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:email_manager/api/api_service.dart';
+import 'package:email_manager/core/auth/credentials_store.dart';
 import 'package:email_manager/main.dart';
 import 'package:email_manager/settings/settings_controller.dart';
 
@@ -15,7 +17,18 @@ Future<void> _pumpThread(WidgetTester tester) async {
 
   SharedPreferences.setMockInitialValues(const {});
   final prefs = await SharedPreferences.getInstance();
-  await tester.pumpWidget(EmailManagerApp(settings: SettingsController(prefs)));
+  final api = ApiService.create(
+    credentialsStore: InMemoryCredentialsStore(const [
+      AccountCredentials(
+        email: 'alice@outlook.com',
+        clientId: 'c',
+        refreshToken: 'r',
+      ),
+    ]),
+  );
+  await tester.pumpWidget(
+    EmailManagerApp(settings: SettingsController(prefs), api: api),
+  );
   await tester.pumpAndSettle();
 
   await tester.tap(find.text('alice@outlook.com'));
@@ -40,10 +53,7 @@ void main() {
       find.textContaining('https://example.com/detail', findRichText: true),
       findsOneWidget,
     );
-    expect(
-      find.textContaining('前往安全中心', findRichText: true),
-      findsOneWidget,
-    );
+    expect(find.textContaining('前往安全中心', findRichText: true), findsOneWidget);
   });
 
   testWidgets('点击历史消息气泡 → 详情页按纯文本渲染', (WidgetTester tester) async {

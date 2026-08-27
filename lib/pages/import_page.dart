@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../api/api_scope.dart';
 import '../data/account_import.dart';
 import '../l10n/app_localizations.dart';
 import '../theme/app_palette.dart';
@@ -44,8 +45,10 @@ class _ImportPageState extends State<ImportPage> {
     });
   }
 
-  void _onConfirm() {
+  Future<void> _onConfirm() async {
     final l10n = AppLocalizations.of(context);
+    final api = ApiScope.of(context);
+    final navigator = Navigator.of(context);
     final buffer = StringBuffer()
       ..writeln(_pasteController.text)
       ..writeln(_csvContent);
@@ -69,13 +72,17 @@ class _ImportPageState extends State<ImportPage> {
       return;
     }
 
+    // 持久化到安全存储（refresh_token / client_id / password 等长期凭据落盘）。
+    await api.saveImported(parsed.accounts);
+    if (!mounted) return;
+
     var message = l10n.importResultCount(parsed.accounts.length);
     if (parsed.invalidLines > 0) {
       message += l10n.importResultInvalid(parsed.invalidLines);
     }
     show(message);
-    // 解析成功后返回首页（携带结果，供后续接入真实数据源）。
-    Navigator.of(context).maybePop(parsed.accounts);
+    // 持久化成功后返回首页（携带结果，首页据此重新载入已存账号）。
+    navigator.maybePop(parsed.accounts);
   }
 
   @override
@@ -98,10 +105,7 @@ class _ImportPageState extends State<ImportPage> {
                   _SectionLabel(l10n.importCsvSection),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: _CsvDropZone(
-                      fileName: _csvName,
-                      onTap: _pickCsv,
-                    ),
+                    child: _CsvDropZone(fileName: _csvName, onTap: _pickCsv),
                   ),
                   const SizedBox(height: 28),
                   _SectionLabel(l10n.importPasteSection),
@@ -144,8 +148,7 @@ class _Header extends StatelessWidget {
         children: [
           IconButton(
             onPressed: () => Navigator.of(context).maybePop(),
-            icon: Icon(Icons.arrow_back,
-                color: palette.textPrimary, size: 20),
+            icon: Icon(Icons.arrow_back, color: palette.textPrimary, size: 20),
             splashRadius: 22,
           ),
           const SizedBox(width: 4),
@@ -210,7 +213,9 @@ class _CsvDropZone extends StatelessWidget {
           child: Column(
             children: [
               Icon(
-                picked ? Icons.check_circle_outline : Icons.file_upload_outlined,
+                picked
+                    ? Icons.check_circle_outline
+                    : Icons.file_upload_outlined,
                 color: picked ? palette.primary : palette.textSecondary,
                 size: 36,
               ),
@@ -259,8 +264,11 @@ class _PasteField extends StatelessWidget {
         filled: true,
         fillColor: palette.card,
         hintText: l10n.importPasteHint,
-        hintStyle:
-            TextStyle(color: palette.textSecondary, fontSize: 14, height: 1.5),
+        hintStyle: TextStyle(
+          color: palette.textSecondary,
+          fontSize: 14,
+          height: 1.5,
+        ),
         contentPadding: const EdgeInsets.all(16),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
@@ -303,8 +311,7 @@ class _FormatCard extends StatelessWidget {
       child: Column(
         children: [
           for (int i = 0; i < rows.length; i++) ...[
-            if (i > 0)
-              Divider(color: palette.divider, height: 1, thickness: 1),
+            if (i > 0) Divider(color: palette.divider, height: 1, thickness: 1),
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 14),
               child: Row(
@@ -325,7 +332,9 @@ class _FormatCard extends StatelessWidget {
                     child: Text(
                       rows[i][1],
                       style: TextStyle(
-                          color: palette.textSecondary, fontSize: 14),
+                        color: palette.textSecondary,
+                        fontSize: 14,
+                      ),
                     ),
                   ),
                 ],

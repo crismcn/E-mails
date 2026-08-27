@@ -2,8 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:email_manager/api/api_service.dart';
+import 'package:email_manager/core/auth/credentials_store.dart';
 import 'package:email_manager/main.dart';
 import 'package:email_manager/settings/settings_controller.dart';
+import 'package:email_manager/widgets/stat_card.dart';
+
+/// 预置账号（含 alice / james，供滚动定位断言）。
+const List<String> _kEmails = [
+  'alice@outlook.com',
+  'tom@outlook.com',
+  'william@outlook.com',
+  'emma@outlook.com',
+  'james@outlook.com',
+  'sophia@outlook.com',
+];
 
 /// 以较矮的手机视口打开首页，保证示例账号列表可滚动。
 Future<void> _pumpHome(WidgetTester tester) async {
@@ -14,7 +27,15 @@ Future<void> _pumpHome(WidgetTester tester) async {
 
   SharedPreferences.setMockInitialValues(const {});
   final prefs = await SharedPreferences.getInstance();
-  await tester.pumpWidget(EmailManagerApp(settings: SettingsController(prefs)));
+  final api = ApiService.create(
+    credentialsStore: InMemoryCredentialsStore([
+      for (final e in _kEmails)
+        AccountCredentials(email: e, clientId: 'c', refreshToken: 'r'),
+    ]),
+  );
+  await tester.pumpWidget(
+    EmailManagerApp(settings: SettingsController(prefs), api: api),
+  );
   await tester.pumpAndSettle();
 }
 
@@ -31,12 +52,11 @@ void main() {
   const double titleBand = 70;
 
   final title = find.text('邮箱管理');
-  final stats = find.text('1268');
+  // 汇总条的定位基准 —— 取第一张统计卡顶部（等价于旧断言里的数字位置）。
+  final stats = find.byType(StatCard).first;
   final search = find.text('搜索邮箱号');
 
-  testWidgets('首页上滑：汇总、搜索框、列表同步上移，标题被一起顶出', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('首页上滑：汇总、搜索框、列表同步上移，标题被一起顶出', (WidgetTester tester) async {
     await _pumpHome(tester);
 
     final titleDy = _dy(tester, title);
@@ -62,9 +82,7 @@ void main() {
     expect(titleDy - _dy(tester, title), closeTo(moved, 0.01));
   });
 
-  testWidgets('首页上滑：标题顶出后汇总与搜索框吸顶，列表继续滚动', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('首页上滑：标题顶出后汇总与搜索框吸顶，列表继续滚动', (WidgetTester tester) async {
     await _pumpHome(tester);
 
     final titleDy = _dy(tester, title);
