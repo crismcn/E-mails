@@ -160,7 +160,9 @@ class _SelectCircle extends StatelessWidget {
       decoration: BoxDecoration(
         color: selected ? palette.primary : Colors.transparent,
         shape: BoxShape.circle,
-        border: selected ? null : Border.all(color: palette.border, width: 1.5),
+        border: selected
+            ? null
+            : Border.all(color: palette.textSecondary, width: 1.5),
       ),
       child: selected
           ? const Icon(
