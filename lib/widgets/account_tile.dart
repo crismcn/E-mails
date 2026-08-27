@@ -72,7 +72,7 @@ class _AccountTileState extends State<AccountTile>
       onTap: widget.onTap,
       onLongPress: widget.onLongPress,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
@@ -95,7 +95,7 @@ class _AccountTileState extends State<AccountTile>
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: palette.textPrimary,
-                            fontSize: 17,
+                            fontSize: 16,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -111,7 +111,7 @@ class _AccountTileState extends State<AccountTile>
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: palette.textSecondary,
-                      fontSize: 15,
+                      fontSize: 14,
                     ),
                   ),
                 ],
@@ -243,14 +243,14 @@ class _UnreadBadge extends StatelessWidget {
       children: [
         Text(
           l10n.unread,
-          style: TextStyle(color: palette.textSecondary, fontSize: 13),
+          style: TextStyle(color: palette.textSecondary, fontSize: 12),
         ),
         const SizedBox(width: 6),
         Text(
           text,
           style: TextStyle(
             color: hasUnread ? palette.primary : palette.textSecondary,
-            fontSize: 15,
+            fontSize: 14,
             fontWeight: FontWeight.w600,
           ),
         ),

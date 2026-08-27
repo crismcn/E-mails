@@ -99,7 +99,7 @@ class _Header extends StatelessWidget {
             title,
             style: TextStyle(
               color: palette.textPrimary,
-              fontSize: 24,
+              fontSize: 22,
               fontWeight: FontWeight.w700,
             ),
           ),

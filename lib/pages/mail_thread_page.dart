@@ -180,7 +180,7 @@ class _Header extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: palette.textPrimary,
-                fontSize: 24,
+                fontSize: 22,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -206,7 +206,7 @@ class _MessageItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 24),
+      padding: const EdgeInsets.only(bottom: 20),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -248,7 +248,7 @@ class _MessageItem extends StatelessWidget {
                         message.time,
                         style: TextStyle(
                           color: palette.textSecondary,
-                          fontSize: 13,
+                          fontSize: 12,
                         ),
                       ),
                     ],
@@ -320,7 +320,7 @@ class _Bubble extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(14),
           child: SizedBox(
             width: double.infinity,
             child: Text(
@@ -329,7 +329,7 @@ class _Bubble extends StatelessWidget {
               overflow: detailed ? TextOverflow.clip : TextOverflow.ellipsis,
               style: TextStyle(
                 color: palette.textPrimary,
-                fontSize: 16,
+                fontSize: 15,
                 height: 1.6,
               ),
             ),
@@ -402,7 +402,7 @@ class _ReplyBar extends StatelessWidget {
         children: [
           Expanded(
             child: TextField(
-              style: TextStyle(color: palette.textPrimary, fontSize: 15),
+              style: TextStyle(color: palette.textPrimary, fontSize: 14),
               cursorColor: palette.primary,
               textInputAction: TextInputAction.send,
               decoration: InputDecoration(
@@ -412,11 +412,11 @@ class _ReplyBar extends StatelessWidget {
                 hintText: l10n.mailReplyHint,
                 hintStyle: TextStyle(
                   color: palette.textSecondary,
-                  fontSize: 15,
+                  fontSize: 14,
                 ),
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 18,
-                  vertical: 12,
+                  vertical: 10,
                 ),
                 border: const OutlineInputBorder(
                   borderRadius: _pillRadius,

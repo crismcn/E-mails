@@ -16,7 +16,7 @@ import 'settings_page.dart';
 
 /// 顶部选择栏高度 —— 与标题条 [_HomeHeaderDelegate._titleBand] 等高：
 /// 多选时列表整体下移这么多为悬浮栏让位、同时标题条收起同等高度，两者抵消，净布局不跳。
-const double _kSelTopBarHeight = 70;
+const double _kSelTopBarHeight = 62;
 
 /// 首页 —— 邮箱批量管理主界面。
 class HomePage extends StatefulWidget {
@@ -428,14 +428,14 @@ class _HomeHeaderDelegate extends SliverPersistentHeaderDelegate {
   final double titleFactor;
   final ValueChanged<String> onQueryChanged;
 
-  /// 标题条高度（上边距 8 + 标题行 48 + 下边距 14）。
-  static const double _titleBand = 70;
+  /// 标题条高度（上边距 6 + 标题行 44 + 下边距 12）。
+  static const double _titleBand = 62;
 
-  /// 汇总条高度（上间距 8 + 数值 28 + 间距 6 + 标签 13 + 下间距 20）。
-  static const double _statsBand = 75;
+  /// 汇总条高度（上间距 6 + 数值 24 + 间距 5 + 标签 12 + 下间距 16 ≈ 63，留余量取 66）。
+  static const double _statsBand = 66;
 
-  /// 搜索条高度（输入框 38 + 下间距 8）。
-  static const double _searchBand = 46;
+  /// 搜索条高度（输入框 34 + 下间距 8）。
+  static const double _searchBand = 42;
 
   /// 吸顶后保留的高度 —— 汇总 + 搜索框。
   static const double _pinnedBand = _statsBand + _searchBand;
@@ -509,9 +509,9 @@ class _HomeTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 70,
+      height: 62,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 14),
+        padding: const EdgeInsets.fromLTRB(20, 6, 20, 12),
         child: Align(
           alignment: Alignment.centerLeft,
           child: Text(
@@ -520,7 +520,7 @@ class _HomeTitle extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: context.palette.textPrimary,
-              fontSize: 24,
+              fontSize: 22,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -735,9 +735,9 @@ class _StatsRow extends StatelessWidget {
     final palette = context.palette;
     final l10n = AppLocalizations.of(context);
     return SizedBox(
-      height: 75,
+      height: 66,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+        padding: const EdgeInsets.fromLTRB(20, 6, 20, 16),
         child: Row(
           children: [
             Expanded(
@@ -787,12 +787,12 @@ class _SearchBox extends StatelessWidget {
     final palette = context.palette;
     final l10n = AppLocalizations.of(context);
     return SizedBox(
-      height: 46,
+      height: 42,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
         child: TextField(
           onChanged: onChanged,
-          style: TextStyle(color: palette.textPrimary, fontSize: 15),
+          style: TextStyle(color: palette.textPrimary, fontSize: 14),
           cursorColor: palette.primary,
           textInputAction: TextInputAction.search,
           decoration: InputDecoration(
@@ -800,17 +800,17 @@ class _SearchBox extends StatelessWidget {
             filled: true,
             fillColor: palette.card,
             hintText: l10n.searchHint,
-            hintStyle: TextStyle(color: palette.textSecondary, fontSize: 15),
+            hintStyle: TextStyle(color: palette.textSecondary, fontSize: 14),
             prefixIcon: Icon(
               Icons.search,
               color: palette.textSecondary,
-              size: 20,
+              size: 19,
             ),
             prefixIconConstraints: const BoxConstraints(
-              minWidth: 38,
+              minWidth: 36,
               minHeight: 0,
             ),
-            contentPadding: const EdgeInsets.fromLTRB(4, 9, 12, 9),
+            contentPadding: const EdgeInsets.fromLTRB(4, 7, 12, 7),
             border: const OutlineInputBorder(
               borderRadius: _pillRadius,
               borderSide: BorderSide.none,

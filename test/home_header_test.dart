@@ -49,7 +49,7 @@ Future<void> _scrollUp(WidgetTester tester, double delta) async {
 
 void main() {
   /// 可折叠的量 —— 与 `_HomeHeaderDelegate._titleBand` 一致。
-  const double titleBand = 70;
+  const double titleBand = 62;
 
   final title = find.text('邮箱管理');
   // 汇总条的定位基准 —— 取第一张统计卡顶部（等价于旧断言里的数字位置）。

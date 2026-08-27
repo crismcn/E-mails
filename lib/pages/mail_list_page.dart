@@ -165,7 +165,7 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 20, 14),
+      padding: const EdgeInsets.fromLTRB(8, 6, 20, 12),
       child: Row(
         children: [
           IconButton(
@@ -185,7 +185,7 @@ class _Header extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: palette.textPrimary,
-                fontSize: 24,
+                fontSize: 22,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -215,7 +215,7 @@ class _SearchBox extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
       child: TextField(
         onChanged: onChanged,
-        style: TextStyle(color: palette.textPrimary, fontSize: 15),
+        style: TextStyle(color: palette.textPrimary, fontSize: 14),
         cursorColor: palette.primary,
         textInputAction: TextInputAction.search,
         decoration: InputDecoration(
@@ -223,17 +223,17 @@ class _SearchBox extends StatelessWidget {
           filled: true,
           fillColor: palette.card,
           hintText: l10n.mailSearchHint,
-          hintStyle: TextStyle(color: palette.textSecondary, fontSize: 15),
+          hintStyle: TextStyle(color: palette.textSecondary, fontSize: 14),
           prefixIcon: Icon(
             Icons.search,
             color: palette.textSecondary,
-            size: 20,
+            size: 19,
           ),
           prefixIconConstraints: const BoxConstraints(
-            minWidth: 38,
+            minWidth: 36,
             minHeight: 0,
           ),
-          contentPadding: const EdgeInsets.fromLTRB(4, 9, 12, 9),
+          contentPadding: const EdgeInsets.fromLTRB(4, 7, 12, 7),
           border: const OutlineInputBorder(
             borderRadius: _pillRadius,
             borderSide: BorderSide.none,

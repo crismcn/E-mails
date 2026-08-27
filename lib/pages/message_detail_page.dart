@@ -66,25 +66,25 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _RecipientRow(recipient: message.recipient),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 20),
                     Text(
                       message.subject,
                       style: TextStyle(
                         color: palette.textPrimary,
-                        fontSize: 27,
+                        fontSize: 24,
                         fontWeight: FontWeight.w700,
                         height: 1.25,
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 8),
                     Text(
                       message.fullDate,
                       style: TextStyle(
                         color: palette.textSecondary,
-                        fontSize: 15,
+                        fontSize: 14,
                       ),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 16),
                     _Body(message: message, onTapUrl: _openUrl),
                   ],
                 ),
@@ -130,7 +130,7 @@ class _Header extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: palette.textPrimary,
-                fontSize: 24,
+                fontSize: 22,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -166,7 +166,7 @@ class _RecipientRow extends StatelessWidget {
       children: [
         Text(
           l10n.detailRecipient,
-          style: TextStyle(color: palette.textSecondary, fontSize: 17),
+          style: TextStyle(color: palette.textSecondary, fontSize: 16),
         ),
         const SizedBox(width: 6),
         Expanded(
@@ -174,7 +174,7 @@ class _RecipientRow extends StatelessWidget {
             '$recipient;',
             style: TextStyle(
               color: palette.primary,
-              fontSize: 17,
+              fontSize: 16,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -201,14 +201,14 @@ class _Body extends StatelessWidget {
         onTapUrl: onTapUrl,
         textStyle: TextStyle(
           color: palette.textPrimary,
-          fontSize: 17,
+          fontSize: 16,
           height: 1.55,
         ),
       );
     }
     return SelectableText(
       message.body,
-      style: TextStyle(color: palette.textPrimary, fontSize: 17, height: 1.55),
+      style: TextStyle(color: palette.textPrimary, fontSize: 16, height: 1.55),
     );
   }
 }

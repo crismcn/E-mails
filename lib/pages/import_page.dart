@@ -156,7 +156,7 @@ class _Header extends StatelessWidget {
             title,
             style: TextStyle(
               color: palette.textPrimary,
-              fontSize: 24,
+              fontSize: 22,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -181,7 +181,7 @@ class _SectionLabel extends StatelessWidget {
         text,
         style: TextStyle(
           color: palette.textPrimary,
-          fontSize: 17,
+          fontSize: 16,
           fontWeight: FontWeight.w700,
         ),
       ),
@@ -225,7 +225,7 @@ class _CsvDropZone extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: palette.textPrimary,
-                  fontSize: 16,
+                  fontSize: 15,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -313,7 +313,7 @@ class _FormatCard extends StatelessWidget {
           for (int i = 0; i < rows.length; i++) ...[
             if (i > 0) Divider(color: palette.divider, height: 1, thickness: 1),
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 14),
+              padding: const EdgeInsets.symmetric(vertical: 12),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -365,7 +365,7 @@ class _ConfirmBar extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
         child: SizedBox(
           width: double.infinity,
-          height: 52,
+          height: 48,
           child: FilledButton(
             onPressed: onPressed,
             style: FilledButton.styleFrom(
@@ -375,7 +375,7 @@ class _ConfirmBar extends StatelessWidget {
             ),
             child: Text(
               label,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
             ),
           ),
         ),

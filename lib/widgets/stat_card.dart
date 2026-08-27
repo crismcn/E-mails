@@ -29,19 +29,19 @@ class StatCard extends StatelessWidget {
           softWrap: false,
           style: TextStyle(
             color: valueColor,
-            fontSize: 28,
+            fontSize: 24,
             fontWeight: FontWeight.w700,
             height: 1.0,
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 5),
         Text(
           label,
           maxLines: 1,
           softWrap: false,
           style: TextStyle(
             color: palette.textSecondary,
-            fontSize: 13,
+            fontSize: 12,
             height: 1.0,
           ),
         ),
