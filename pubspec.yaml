@@ -43,6 +43,8 @@ dependencies:
   easy_refresh: ^3.5.1
   flutter_widget_from_html_core: ^0.17.2
   url_launcher: ^6.3.2
+  dio: ^5.11.0
+  flutter_secure_storage: ^11.0.0
 
 dev_dependencies:
   flutter_test:

@@ -6,7 +6,8 @@ plugins {
 
 android {
     namespace = "com.example.email_manager"
-    compileSdk = flutter.compileSdkVersion
+    // flutter_secure_storage 要求 compileSdk ≥ 37；显式指定以覆盖 Flutter 默认(36)。
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
