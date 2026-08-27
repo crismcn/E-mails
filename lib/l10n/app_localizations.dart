@@ -469,6 +469,60 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'，{count} 行格式有误已忽略'**
   String importResultInvalid(int count);
+
+  /// No description provided for @selectionTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'已选择 {count} 项'**
+  String selectionTitle(int count);
+
+  /// No description provided for @actionHealthCheck.
+  ///
+  /// In zh, this message translates to:
+  /// **'健康检测'**
+  String get actionHealthCheck;
+
+  /// No description provided for @actionSelectAll.
+  ///
+  /// In zh, this message translates to:
+  /// **'全选'**
+  String get actionSelectAll;
+
+  /// No description provided for @accountChecking.
+  ///
+  /// In zh, this message translates to:
+  /// **'检查中…'**
+  String get accountChecking;
+
+  /// No description provided for @accountCheckSummary.
+  ///
+  /// In zh, this message translates to:
+  /// **'检查完成：正常 {ok}，异常 {bad}'**
+  String accountCheckSummary(int ok, int bad);
+
+  /// No description provided for @accountDeleteTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除邮箱'**
+  String get accountDeleteTitle;
+
+  /// No description provided for @accountDeleteMultiBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除后需重新导入才能恢复，确定删除选中的 {count} 个邮箱？'**
+  String accountDeleteMultiBody(int count);
+
+  /// No description provided for @accountDeleted.
+  ///
+  /// In zh, this message translates to:
+  /// **'已删除 {count} 个账号'**
+  String accountDeleted(int count);
+
+  /// No description provided for @commonCancel.
+  ///
+  /// In zh, this message translates to:
+  /// **'取消'**
+  String get commonCancel;
 }
 
 class _AppLocalizationsDelegate

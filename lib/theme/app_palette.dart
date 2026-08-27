@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 class AppPalette extends ThemeExtension<AppPalette> {
   const AppPalette({
     required this.background,
+    required this.border,
     required this.card,
     required this.cardHighlight,
     required this.divider,
@@ -21,6 +22,7 @@ class AppPalette extends ThemeExtension<AppPalette> {
   });
 
   final Color background;
+  final Color border;
   final Color card;
   final Color cardHighlight;
   final Color divider;
@@ -35,13 +37,15 @@ class AppPalette extends ThemeExtension<AppPalette> {
   /// 暗色（默认）—— 参照「邮箱管理」设计稿。
   static const AppPalette dark = AppPalette(
     background: Color(0xFF0A0D12),
+    border: Color(0xFFB6B6B6),
     card: Color(0xFF141A24),
     cardHighlight: Color(0xFF162238),
     divider: Color(0xFF1B212B),
     textPrimary: Color(0xFFF4F6FA),
     textSecondary: Color(0xFF8B93A0),
-    primary: Color(0xFF2F80FF),
-    statusValid: Color(0xFF2F80FF),
+
+    primary: Color(0xFF266BF5),
+    statusValid: Color(0xFF266BF5),
     statusWarning: Color(0xFFF5A623),
     statusError: Color(0xFFFF4D4F),
     glow: Color(0xFF1E3A8A),
@@ -50,13 +54,14 @@ class AppPalette extends ThemeExtension<AppPalette> {
   /// 亮色 —— 简约高级的近白配色，品牌蓝与状态色保持一致。
   static const AppPalette light = AppPalette(
     background: Color(0xFFFFFFFF),
+    border: Color(0xFFECEEF2),
     card: Color(0xFFF4F6FA),
     cardHighlight: Color(0xFFE8F0FF),
     divider: Color(0xFFECEEF2),
     textPrimary: Color(0xFF0A0D12),
     textSecondary: Color(0xFF6B7280),
-    primary: Color(0xFF2F80FF),
-    statusValid: Color(0xFF2F80FF),
+    primary: Color(0xFF266BF5),
+    statusValid: Color(0xFF266BF5),
     statusWarning: Color(0xFFF5A623),
     statusError: Color(0xFFFF4D4F),
     glow: Color(0xFFDCE7FF),
@@ -65,6 +70,7 @@ class AppPalette extends ThemeExtension<AppPalette> {
   @override
   AppPalette copyWith({
     Color? background,
+    Color? border,
     Color? card,
     Color? cardHighlight,
     Color? divider,
@@ -78,6 +84,7 @@ class AppPalette extends ThemeExtension<AppPalette> {
   }) {
     return AppPalette(
       background: background ?? this.background,
+      border: border ?? this.border,
       card: card ?? this.card,
       cardHighlight: cardHighlight ?? this.cardHighlight,
       divider: divider ?? this.divider,
@@ -96,6 +103,7 @@ class AppPalette extends ThemeExtension<AppPalette> {
     if (other is! AppPalette) return this;
     return AppPalette(
       background: Color.lerp(background, other.background, t)!,
+      border: Color.lerp(border, other.border, t)!,
       card: Color.lerp(card, other.card, t)!,
       cardHighlight: Color.lerp(cardHighlight, other.cardHighlight, t)!,
       divider: Color.lerp(divider, other.divider, t)!,

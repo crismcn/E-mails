@@ -2,6 +2,7 @@ import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
 
 import '../api/api_scope.dart';
+import '../core/network/api_exception.dart';
 import '../l10n/app_localizations.dart';
 import '../models/account.dart';
 import '../theme/app_page_route.dart';
@@ -13,6 +14,10 @@ import 'import_page.dart';
 import 'mail_list_page.dart';
 import 'settings_page.dart';
 
+/// 顶部选择栏高度 —— 与标题条 [_HomeHeaderDelegate._titleBand] 等高：
+/// 多选时列表整体下移这么多为悬浮栏让位、同时标题条收起同等高度，两者抵消，净布局不跳。
+const double _kSelTopBarHeight = 70;
+
 /// 首页 —— 邮箱批量管理主界面。
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -21,13 +26,42 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage>
+    with SingleTickerProviderStateMixin {
   final List<Account> _items = <Account>[];
   String _query = '';
   bool _loaded = false;
 
+  /// 多选态与已选邮箱集合（长按进入）。
+  bool _selectionMode = false;
+  final Set<String> _selected = <String>{};
+
+  /// 批量健康检测进行中 —— 防重复触发。
+  bool _checking = false;
+
+  /// 多选进出动画（0=常态，1=多选态）—— 顶部选择栏从顶切入、底栏从底滑起、
+  /// 标题条同步收起都由它统一驱动，保证一致的节奏、避免跳变。
+  late final AnimationController _selCtrl;
+  late final Animation<double> _selAnim;
+
   /// 上次刷新完成时间（下拉刷新头显示）。
   DateTime _lastUpdated = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _selCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 160),
+    );
+    _selAnim = CurvedAnimation(parent: _selCtrl, curve: Curves.easeOutCubic);
+  }
+
+  @override
+  void dispose() {
+    _selCtrl.dispose();
+    super.dispose();
+  }
 
   bool get _isSearching => _query.trim().isNotEmpty;
 
@@ -81,64 +115,287 @@ class _HomePageState extends State<HomePage> {
     await _load();
   }
 
+  // ---- 多选交互 ----
+
+  void _enterSelection(String email) {
+    setState(() {
+      _selectionMode = true;
+      _selected
+        ..clear()
+        ..add(email);
+    });
+    _selCtrl.forward();
+  }
+
+  void _exitSelection() {
+    setState(() {
+      _selectionMode = false;
+      _selected.clear();
+    });
+    // 反向播放退出动画（顶部栏收起 / 底栏落下 / 标题条展开）。
+    _selCtrl.reverse();
+  }
+
+  void _toggleSelect(String email) {
+    setState(() {
+      if (!_selected.remove(email)) _selected.add(email);
+    });
+  }
+
+  /// 全选 / 取消全选（作用于当前过滤后的列表）。
+  void _toggleSelectAll() {
+    final all = _filtered.map((a) => a.email).toSet();
+    setState(() {
+      if (all.isNotEmpty && _selected.containsAll(all)) {
+        _selected.removeAll(all);
+      } else {
+        _selected.addAll(all);
+      }
+    });
+  }
+
+  void _toast(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          duration: const Duration(milliseconds: 1400),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+  }
+
+  // ---- 批量操作 ----
+
+  /// 批量健康检测 —— 逐账号强制刷新一次 token：成功记为有效，
+  /// 鉴权失败记为 Token 过期，其它错误（网络等）暂不改状态。
+  Future<void> _healthCheckSelected() async {
+    if (_checking || _selected.isEmpty) return;
+    final api = ApiScope.of(context);
+    final l10n = AppLocalizations.of(context);
+    final emails = _selected.toList();
+
+    setState(() => _checking = true);
+    _toast(l10n.accountChecking);
+
+    var ok = 0;
+    var bad = 0;
+    final results = <String, AccountStatus>{};
+    await Future.wait(
+      emails.map((email) async {
+        try {
+          await api.tokenService.accessTokenFor(email, forceRefresh: true);
+          results[email] = AccountStatus.valid;
+          ok++;
+        } on ApiException catch (e) {
+          bad++;
+          if (e.isAuthFailure) results[email] = AccountStatus.tokenExpired;
+        } catch (_) {
+          bad++;
+        }
+      }),
+    );
+
+    if (!mounted) return;
+    setState(() {
+      for (var i = 0; i < _items.length; i++) {
+        final status = results[_items[i].email];
+        if (status != null) _items[i] = _items[i].copyWith(status: status);
+      }
+      _checking = false;
+      _selectionMode = false;
+      _selected.clear();
+    });
+    _selCtrl.reverse();
+    _toast(l10n.accountCheckSummary(ok, bad));
+  }
+
+  /// 批量删除 —— 二次确认后从安全存储与列表移除。
+  Future<void> _deleteSelected() async {
+    if (_selected.isEmpty) return;
+    final l10n = AppLocalizations.of(context);
+    final count = _selected.length;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.accountDeleteTitle),
+        content: Text(l10n.accountDeleteMultiBody(count)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l10n.commonCancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(l10n.actionDelete),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final api = ApiScope.of(context);
+    final emails = _selected.toList();
+    await Future.wait(emails.map(api.credentialsStore.remove));
+    if (!mounted) return;
+    setState(() {
+      _items.removeWhere((a) => _selected.contains(a.email));
+      _selectionMode = false;
+      _selected.clear();
+    });
+    _selCtrl.reverse();
+    _toast(l10n.accountDeleted(count));
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    return Scaffold(
-      backgroundColor: palette.background,
-      body: SafeArea(
-        bottom: false,
-        child: Stack(
-          children: [
-            EasyRefresh(
-              // 吸顶头部会盖住浮于内容之上的指示器，故改用 locator 定位到吸顶区下方。
-              header: appRefreshHeader(
-                _lastUpdated,
-                position: IndicatorPosition.locator,
-              ),
-              onRefresh: _onRefresh,
-              child: CustomScrollView(
-                slivers: [
-                  // 汇总 + 搜索框随列表上滑，盖住标题后吸顶固定。
-                  SliverPersistentHeader(
-                    pinned: true,
-                    delegate: _HomeHeaderDelegate(
-                      background: palette.background,
-                      total: _items.length,
-                      valid: _validCount,
-                      error: _errorCount,
-                      onQueryChanged: (value) => setState(() => _query = value),
-                    ),
-                  ),
-                  const HeaderLocator.sliver(),
-                  SliverList.separated(
-                    itemCount: _filtered.length,
-                    separatorBuilder: (context, index) => Divider(
-                      color: palette.divider,
-                      height: 1,
-                      thickness: 1,
-                      // 与邮件列表一致：分隔线缩进对齐邮箱文字（外边距 20 + 头像 50 + 间距 14）。
-                      indent: 84,
-                      endIndent: 20,
-                    ),
-                    itemBuilder: (context, index) {
-                      final account = _filtered[index];
-                      return AccountTile(
-                        account: account,
-                        onTap: () => Navigator.of(context).push(
-                          appRoute<void>(
-                            (_) => MailListPage(accountEmail: account.email),
+    final all = _filtered.map((a) => a.email).toSet();
+    final allSelected = all.isNotEmpty && _selected.containsAll(all);
+    return PopScope(
+      // 多选态下拦截返回：先退出多选，而非离开首页。
+      canPop: !_selectionMode,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _exitSelection();
+      },
+      child: Scaffold(
+        backgroundColor: palette.background,
+        body: SafeArea(
+          bottom: false,
+          // 所有多选动画统一由 _selAnim 驱动，逐帧重建这棵子树。
+          child: AnimatedBuilder(
+            animation: _selAnim,
+            builder: (context, _) {
+              final sel = _selAnim.value.clamp(0.0, 1.0);
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  // 列表区：多选态整体下移 _kSelTopBarHeight，为顶部悬浮选择栏让位。
+                  // （标题条会同步收起同等高度，两者抵消，未滚动时净布局不跳。）
+                  Padding(
+                    padding: EdgeInsets.only(top: _kSelTopBarHeight * sel),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        EasyRefresh(
+                          // 吸顶头部会盖住浮于内容之上的指示器，故改用 locator 定位到吸顶区下方。
+                          header: appRefreshHeader(
+                            _lastUpdated,
+                            position: IndicatorPosition.locator,
+                          ),
+                          onRefresh: _onRefresh,
+                          child: CustomScrollView(
+                            slivers: [
+                              // 汇总 + 搜索框随列表上滑，盖住标题后吸顶固定。
+                              // 多选态标题条随 sel 收起（让位给顶部选择栏，避免重复标题）。
+                              SliverPersistentHeader(
+                                pinned: true,
+                                delegate: _HomeHeaderDelegate(
+                                  background: palette.background,
+                                  total: _items.length,
+                                  valid: _validCount,
+                                  error: _errorCount,
+                                  titleFactor: 1 - sel,
+                                  onQueryChanged: (value) =>
+                                      setState(() => _query = value),
+                                ),
+                              ),
+                              const HeaderLocator.sliver(),
+                              SliverList.separated(
+                                itemCount: _filtered.length,
+                                separatorBuilder: (context, index) => Divider(
+                                  color: palette.divider,
+                                  height: 1,
+                                  thickness: 1,
+                                  // 与邮件列表一致：分隔线缩进对齐邮箱文字（外边距 20 + 头像 50 + 间距 14）。
+                                  indent: 84,
+                                  endIndent: 20,
+                                ),
+                                itemBuilder: (context, index) {
+                                  final account = _filtered[index];
+                                  return AccountTile(
+                                    account: account,
+                                    selectionMode: _selectionMode,
+                                    selected: _selected.contains(account.email),
+                                    onLongPress: _selectionMode
+                                        ? null
+                                        : () => _enterSelection(account.email),
+                                    onTap: _selectionMode
+                                        ? () => _toggleSelect(account.email)
+                                        : () => Navigator.of(context).push(
+                                            appRoute<void>(
+                                              (_) => MailListPage(
+                                                accountEmail: account.email,
+                                              ),
+                                            ),
+                                          ),
+                                  );
+                                },
+                              ),
+                              // 底栏浮起时给列表尾部留白，避免遮挡最后一项。
+                              SliverToBoxAdapter(
+                                child: SizedBox(height: 96 * sel),
+                              ),
+                            ],
                           ),
                         ),
-                      );
-                    },
+                        // 右上角「…」菜单 —— 多选态淡出并禁用。
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: IgnorePointer(
+                            ignoring: _selectionMode,
+                            child: Opacity(
+                              opacity: 1 - sel,
+                              child: _HeaderMenu(onImported: _load),
+                            ),
+                          ),
+                        ),
+                        // 底部批量操作栏 —— 随 sel 从屏幕外(下方)滑起。
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: IgnorePointer(
+                            ignoring: !_selectionMode,
+                            child: FractionalTranslation(
+                              translation: Offset(0, 1 - sel),
+                              child: _SelectionBar(
+                                hasSelection: _selected.isNotEmpty,
+                                allSelected: allSelected,
+                                onHealthCheck: _healthCheckSelected,
+                                onDelete: _deleteSelected,
+                                onSelectAll: _toggleSelectAll,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
+                  // 顶部选择栏：绝对定位于顶部，进入时由上向下滑入（悬浮于列表之上，不随滚动）。
+                  if (sel > 0)
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: IgnorePointer(
+                        ignoring: !_selectionMode,
+                        child: FractionalTranslation(
+                          translation: Offset(0, -(1 - sel)),
+                          child: _SelectionTopBar(
+                            count: _selected.length,
+                            onClose: _exitSelection,
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
-              ),
-            ),
-            // 右上角「…」菜单 —— 汇总上滑覆盖标题后，它仍固定在原位且可点。
-            Positioned(top: 8, right: 8, child: _HeaderMenu(onImported: _load)),
-          ],
+              );
+            },
+          ),
         ),
       ),
     );
@@ -157,6 +414,7 @@ class _HomeHeaderDelegate extends SliverPersistentHeaderDelegate {
     required this.total,
     required this.valid,
     required this.error,
+    required this.titleFactor,
     required this.onQueryChanged,
   });
 
@@ -165,6 +423,9 @@ class _HomeHeaderDelegate extends SliverPersistentHeaderDelegate {
   final int total;
   final int valid;
   final int error;
+
+  /// 标题条显隐系数（1=完整、0=收起）—— 进入多选时随动画收起，让位给顶部选择栏。
+  final double titleFactor;
   final ValueChanged<String> onQueryChanged;
 
   /// 标题条高度（上边距 8 + 标题行 48 + 下边距 14）。
@@ -179,8 +440,11 @@ class _HomeHeaderDelegate extends SliverPersistentHeaderDelegate {
   /// 吸顶后保留的高度 —— 汇总 + 搜索框。
   static const double _pinnedBand = _statsBand + _searchBand;
 
+  /// 当前标题条高度（随 [titleFactor] 收起）。
+  double get _band => _titleBand * titleFactor;
+
   @override
-  double get maxExtent => _titleBand + _pinnedBand;
+  double get maxExtent => _band + _pinnedBand;
 
   @override
   double get minExtent => _pinnedBand;
@@ -191,7 +455,8 @@ class _HomeHeaderDelegate extends SliverPersistentHeaderDelegate {
     double shrinkOffset,
     bool overlapsContent,
   ) {
-    final offset = shrinkOffset > _titleBand ? _titleBand : shrinkOffset;
+    // 可折叠量 = 当前标题条高度；标题完全收起时(_band=0)不再折叠。
+    final offset = shrinkOffset > _band ? _band : shrinkOffset;
     // 标题 + 汇总 + 搜索框作为整体上移 offset：标题被顶出顶部，汇总/搜索框随后吸顶。
     // OverflowBox 让内容始终以 maxExtent 完整高度布局，不随吸顶收缩的盒子被压扁。
     return ClipRect(
@@ -206,7 +471,17 @@ class _HomeHeaderDelegate extends SliverPersistentHeaderDelegate {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const _HomeTitle(),
+                // 标题条随 titleFactor 收起（高度 + 透明度），多选态让位给顶部选择栏。
+                ClipRect(
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    heightFactor: titleFactor.clamp(0.0, 1.0),
+                    child: Opacity(
+                      opacity: titleFactor.clamp(0.0, 1.0),
+                      child: const _HomeTitle(),
+                    ),
+                  ),
+                ),
                 _StatsRow(total: total, valid: valid, error: error),
                 _SearchBox(onChanged: onQueryChanged),
               ],
@@ -223,6 +498,7 @@ class _HomeHeaderDelegate extends SliverPersistentHeaderDelegate {
       oldDelegate.total != total ||
       oldDelegate.valid != valid ||
       oldDelegate.error != error ||
+      oldDelegate.titleFactor != titleFactor ||
       oldDelegate.onQueryChanged != onQueryChanged;
 }
 
@@ -249,6 +525,47 @@ class _HomeTitle extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 顶部选择栏 —— 多选态悬浮于顶部的一条（绝对定位、不随列表滚动）。
+///
+/// 本组件只负责渲染固定高度 [_kSelTopBarHeight] 的栏体；「自上而下滑入」的进出
+/// 动画由父级 `FractionalTranslation`（受 `_selAnim` 驱动）负责，故这里不含动画。
+class _SelectionTopBar extends StatelessWidget {
+  const _SelectionTopBar({required this.count, required this.onClose});
+
+  final int count;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final l10n = AppLocalizations.of(context);
+    return Container(
+      height: _kSelTopBarHeight,
+      decoration: BoxDecoration(color: palette.background),
+      padding: const EdgeInsets.fromLTRB(8, 0, 20, 0),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: onClose,
+            icon: Icon(Icons.close, color: palette.textPrimary, size: 22),
+            splashRadius: 22,
+            tooltip: l10n.commonCancel,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            l10n.selectionTitle(count),
+            style: TextStyle(
+              color: palette.textPrimary,
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -506,6 +823,109 @@ class _SearchBox extends StatelessWidget {
               borderRadius: _pillRadius,
               borderSide: BorderSide.none,
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 多选态底部操作栏 —— 从底部滑起：健康检测 / 删除 / 全选。
+///
+/// 参照「长按操作.jpg」：浅色底、细顶边，图标在上、小字标签在下。
+class _SelectionBar extends StatelessWidget {
+  const _SelectionBar({
+    required this.hasSelection,
+    required this.allSelected,
+    required this.onHealthCheck,
+    required this.onDelete,
+    required this.onSelectAll,
+  });
+
+  /// 是否有选中项 —— 无选中时健康检测/删除置灰不可点。
+  final bool hasSelection;
+  final bool allSelected;
+  final VoidCallback onHealthCheck;
+  final VoidCallback onDelete;
+  final VoidCallback onSelectAll;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final l10n = AppLocalizations.of(context);
+    return Material(
+      color: palette.background,
+      elevation: 20,
+      shadowColor: const Color(0x33000000),
+      child: Container(
+        decoration: BoxDecoration(),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _BarAction(
+                  icon: Icons.health_and_safety_outlined,
+                  label: l10n.actionHealthCheck,
+                  enabled: hasSelection,
+                  onPressed: onHealthCheck,
+                ),
+                _BarAction(
+                  icon: Icons.delete_outline,
+                  label: l10n.actionDelete,
+                  enabled: hasSelection,
+                  onPressed: onDelete,
+                ),
+                _BarAction(
+                  icon: allSelected ? Icons.deselect : Icons.select_all,
+                  label: l10n.actionSelectAll,
+                  enabled: true,
+                  onPressed: onSelectAll,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 底部操作栏单个按钮 —— 图标在上、标签在下；置灰时降透明度并禁用点击。
+class _BarAction extends StatelessWidget {
+  const _BarAction({
+    required this.icon,
+    required this.label,
+    required this.enabled,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool enabled;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final color = enabled
+        ? palette.textPrimary
+        : palette.textSecondary.withValues(alpha: 0.4);
+    return Expanded(
+      child: InkWell(
+        onTap: enabled ? onPressed : null,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: color, size: 26),
+              const SizedBox(height: 4),
+              Text(label, style: TextStyle(color: color, fontSize: 12)),
+            ],
           ),
         ),
       ),

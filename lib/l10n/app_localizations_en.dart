@@ -205,4 +205,39 @@ class AppLocalizationsEn extends AppLocalizations {
   String importResultInvalid(int count) {
     return ', $count invalid lines ignored';
   }
+
+  @override
+  String selectionTitle(int count) {
+    return 'Selected $count';
+  }
+
+  @override
+  String get actionHealthCheck => 'Health check';
+
+  @override
+  String get actionSelectAll => 'Select all';
+
+  @override
+  String get accountChecking => 'Checking…';
+
+  @override
+  String accountCheckSummary(int ok, int bad) {
+    return 'Done: $ok healthy, $bad failed';
+  }
+
+  @override
+  String get accountDeleteTitle => 'Delete mailbox';
+
+  @override
+  String accountDeleteMultiBody(int count) {
+    return 'You\'ll need to re-import to restore them. Delete $count selected mailboxes?';
+  }
+
+  @override
+  String accountDeleted(int count) {
+    return 'Deleted $count accounts';
+  }
+
+  @override
+  String get commonCancel => 'Cancel';
 }

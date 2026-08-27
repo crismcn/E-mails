@@ -76,5 +76,26 @@
   "importResultInvalid": ", {count} invalid lines ignored",
   "@importResultInvalid": {
     "placeholders": { "count": { "type": "int" } }
-  }
+  },
+  "selectionTitle": "Selected {count}",
+  "@selectionTitle": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "actionHealthCheck": "Health check",
+  "actionSelectAll": "Select all",
+  "accountChecking": "Checking…",
+  "accountCheckSummary": "Done: {ok} healthy, {bad} failed",
+  "@accountCheckSummary": {
+    "placeholders": { "ok": { "type": "int" }, "bad": { "type": "int" } }
+  },
+  "accountDeleteTitle": "Delete mailbox",
+  "accountDeleteMultiBody": "You'll need to re-import to restore them. Delete {count} selected mailboxes?",
+  "@accountDeleteMultiBody": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "accountDeleted": "Deleted {count} accounts",
+  "@accountDeleted": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "commonCancel": "Cancel"
 }

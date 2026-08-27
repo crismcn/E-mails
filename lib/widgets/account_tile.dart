@@ -6,26 +6,79 @@ import '../models/mail.dart';
 import '../theme/app_palette.dart';
 
 /// 账号列表项 —— 风格与邮件列表一致：圆形头像（右下角状态点）+ 邮箱/未读 + 状态·协议。
-class AccountTile extends StatelessWidget {
-  const AccountTile({super.key, required this.account, this.onTap});
+///
+/// [selectionMode] 为 true 时右侧从右向左切入一个选择圈（选中为蓝色对勾），
+/// 点击行由外部改为切换选中；长按 [onLongPress] 进入多选。
+///
+/// 选择圈的进出用显式 [AnimationController] 驱动（`SizeTransition` 让它占位/展开
+/// + `SlideTransition` 从右侧滑入 + `FadeTransition` 淡入）。用显式控制器而非隐式
+/// 动画：列表项按索引复用 Element，State 得以保留，切多选时能确定地播放动画。
+class AccountTile extends StatefulWidget {
+  const AccountTile({
+    super.key,
+    required this.account,
+    this.onTap,
+    this.onLongPress,
+    this.selectionMode = false,
+    this.selected = false,
+  });
 
   final Account account;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+  final bool selectionMode;
+  final bool selected;
+
+  @override
+  State<AccountTile> createState() => _AccountTileState();
+}
+
+class _AccountTileState extends State<AccountTile>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 240),
+      // 初值对齐当前态：已在多选中的项（如滚动新建）直接展开，不回放动画。
+      value: widget.selectionMode ? 1 : 0,
+    );
+    _anim = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+  }
+
+  @override
+  void didUpdateWidget(AccountTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.selectionMode != oldWidget.selectionMode) {
+      widget.selectionMode ? _controller.forward() : _controller.reverse();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final l10n = AppLocalizations.of(context);
     return InkWell(
-      onTap: onTap,
+      onTap: widget.onTap,
+      onLongPress: widget.onLongPress,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             _Avatar(
-              email: account.email,
-              statusColor: account.status.color(palette),
+              email: widget.account.email,
+              statusColor: widget.account.status.color(palette),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -37,7 +90,7 @@ class AccountTile extends StatelessWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          account.email,
+                          widget.account.email,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -48,12 +101,12 @@ class AccountTile extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      _UnreadBadge(unread: account.unread),
+                      _UnreadBadge(unread: widget.account.unread),
                     ],
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 4),
                   Text(
-                    '${account.status.label(l10n)} · ${account.protocol.label}',
+                    '${widget.account.status.label(l10n)} · ${widget.account.protocol.label}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -64,9 +117,59 @@ class AccountTile extends StatelessWidget {
                 ],
               ),
             ),
+            // 多选态：占位宽度随动画展开，同时选择圈从右侧滑入并淡入。
+            SizeTransition(
+              axis: Axis.horizontal,
+              alignment: Alignment.centerRight,
+              sizeFactor: _anim,
+              child: FadeTransition(
+                opacity: _anim,
+                child: SlideTransition(
+                  position: _anim.drive(
+                    Tween<Offset>(
+                      begin: const Offset(0.8, 0),
+                      end: Offset.zero,
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 14),
+                    child: _SelectCircle(selected: widget.selected),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 选择圈 —— 未选为浅灰描边空心圆，选中为主色实心圆 + 白色对勾。
+class _SelectCircle extends StatelessWidget {
+  const _SelectCircle({required this.selected});
+
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Container(
+      width: 22,
+      height: 22,
+      decoration: BoxDecoration(
+        color: selected ? palette.primary : Colors.transparent,
+        shape: BoxShape.circle,
+        border: selected ? null : Border.all(color: palette.border, width: 1.5),
+      ),
+      child: selected
+          ? const Icon(
+              Icons.check,
+              color: Colors.white,
+              size: 16,
+              fontWeight: FontWeight.w700,
+            )
+          : null,
     );
   }
 }
@@ -99,7 +202,7 @@ class _Avatar extends StatelessWidget {
               mailAvatarInitial(email),
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 19,
+                fontSize: 20,
                 fontWeight: FontWeight.w600,
               ),
             ),

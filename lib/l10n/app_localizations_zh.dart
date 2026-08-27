@@ -205,4 +205,39 @@ class AppLocalizationsZh extends AppLocalizations {
   String importResultInvalid(int count) {
     return '，$count 行格式有误已忽略';
   }
+
+  @override
+  String selectionTitle(int count) {
+    return '已选择 $count 项';
+  }
+
+  @override
+  String get actionHealthCheck => '健康检测';
+
+  @override
+  String get actionSelectAll => '全选';
+
+  @override
+  String get accountChecking => '检查中…';
+
+  @override
+  String accountCheckSummary(int ok, int bad) {
+    return '检查完成：正常 $ok，异常 $bad';
+  }
+
+  @override
+  String get accountDeleteTitle => '删除邮箱';
+
+  @override
+  String accountDeleteMultiBody(int count) {
+    return '删除后需重新导入才能恢复，确定删除选中的 $count 个邮箱？';
+  }
+
+  @override
+  String accountDeleted(int count) {
+    return '已删除 $count 个账号';
+  }
+
+  @override
+  String get commonCancel => '取消';
 }

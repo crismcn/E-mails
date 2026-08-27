@@ -76,5 +76,26 @@
   "importResultInvalid": "，{count} 行格式有误已忽略",
   "@importResultInvalid": {
     "placeholders": { "count": { "type": "int" } }
-  }
+  },
+  "selectionTitle": "已选择 {count} 项",
+  "@selectionTitle": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "actionHealthCheck": "健康检测",
+  "actionSelectAll": "全选",
+  "accountChecking": "检查中…",
+  "accountCheckSummary": "检查完成：正常 {ok}，异常 {bad}",
+  "@accountCheckSummary": {
+    "placeholders": { "ok": { "type": "int" }, "bad": { "type": "int" } }
+  },
+  "accountDeleteTitle": "删除邮箱",
+  "accountDeleteMultiBody": "删除后需重新导入才能恢复，确定删除选中的 {count} 个邮箱？",
+  "@accountDeleteMultiBody": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "accountDeleted": "已删除 {count} 个账号",
+  "@accountDeleted": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "commonCancel": "取消"
 }
