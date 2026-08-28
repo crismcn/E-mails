@@ -15,8 +15,11 @@ async function getAccessToken() {
     client_id: CLIENT_ID,
     refresh_token: REFRESH_TOKEN,
     grant_type: 'refresh_token',
-    // ★ 关键：明确指定 scope
-    scope: 'https://graph.microsoft.com/User.Read offline_access',
+    // ★ 关键：用 `.default` 换取账号「已授权的全部」权限，而不是硬申请 User.Read。
+    //   这批账号普遍没授权 User.Read（采购号常只有 Mail.Read，自助脚本申请的是
+    //   Mail.ReadWrite/Send），硬申请 User.Read 会整体 AADSTS70000 失败。
+    //   `.default` 只取已同意的权限，能换到 token 就说明 refresh_token 有效、账号可用。
+    scope: 'https://graph.microsoft.com/.default',
   })
 
   if (CLIENT_SECRET) {
@@ -51,51 +54,44 @@ async function getAccessToken() {
   return token
 }
 
-// ====== 调用 Graph API ======
-async function checkMailboxHealth(accessToken) {
-  console.log('📤 准备调用 Graph API，Token 前20字符:', accessToken.substring(0, 20))
+// ====== 尽力读 /me 补全账号信息（读不到不代表账号不可用）======
+async function fetchProfile(accessToken) {
+  console.log('📤 尝试读取 /me，Token 前20字符:', accessToken.substring(0, 20))
   const response = await fetch(GRAPH_API_ENDPOINT, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
 
   const raw = await response.text()
-  console.log('📥 Graph API 响应状态:', response.status)
-  console.log('📄 响应内容:', raw.substring())
+  console.log('📥 Graph /me 响应状态:', response.status)
 
   if (!response.ok) {
-    let errMsg = raw
-    try {
-      const json = JSON.parse(raw)
-      errMsg = json?.error?.message || raw
-    } catch (_) {}
-    throw new Error(`HTTP ${response.status}: ${errMsg}`)
+    // 账号未授权 User.Read 时这里会 401/403，但账号本身可用（能换到 token）。
+    console.log('ℹ️  读取 /me 失败（多因未授权 User.Read），跳过账号信息展示。')
+    return
   }
 
   const data = JSON.parse(raw)
-  console.log('✅ 邮箱健康检查通过！')
   console.log(`📧 邮箱地址: ${data.userPrincipalName || data.mail || EMAIL}`)
   console.log(`👤 显示名称: ${data.displayName || '未设置'}`)
   console.log(`🆔 用户 ID: ${data.id}`)
-  console.log(`📁 邮箱状态: 可正常访问`)
 }
 
 // ====== 主流程 ======
 ;(async () => {
   console.log('🔍 开始检测 Outlook 邮箱健康状态...')
   try {
+    // 能换到 token（refresh_token 有效）即判定账号健康。
     const token = await getAccessToken()
-    await checkMailboxHealth(token)
+    console.log('✅ 邮箱健康检查通过！refresh_token 有效，账号可用。')
+    // /me 仅用于补全展示信息，读不到不影响健康结论。
+    await fetchProfile(token)
   } catch (error) {
     console.error('❌ 健康检查失败：')
     console.error(error.message)
-    // 额外提示
     if (error.message.includes('invalid_grant')) {
       console.log('\n💡 Refresh Token 无效或已过期，请重新授权获取。')
-    } else if (error.message.includes('401')) {
-      console.log('\n💡 可能原因：')
-      console.log('  1. 授权时未包含 User.Read 或 Mail.Read 权限')
-      console.log('  2. Refresh Token 对应的用户已禁用或密码过期')
-      console.log('  3. Client Secret 不正确（请重新生成）')
+    } else if (error.message.includes('unauthorized_client') || error.message.includes('invalid_client')) {
+      console.log('\n💡 client_id 无效或应用未在该账号所属目录注册。')
     }
   }
 })()

@@ -51,14 +51,51 @@ Future<void> _pumpApp(
 }
 
 void main() {
+  testWidgets('列表项：有显示名时主行显示 displayName、次行显示邮箱号',
+      (WidgetTester tester) async {
+    await _pumpApp(
+      tester,
+      await _newController(),
+      api: _seededApi(const [
+        AccountCredentials(
+          email: 'zoe@outlook.com',
+          clientId: 'c',
+          refreshToken: 'r',
+          status: AccountCredentials.statusValid,
+          displayName: '佐伊',
+        ),
+      ]),
+    );
+
+    // 主行 = 显示名；次行 = 邮箱号（不再显示「有效 · Graph」）。
+    expect(find.text('佐伊'), findsOneWidget);
+    expect(find.text('zoe@outlook.com'), findsOneWidget);
+    expect(find.text('有效 · Graph'), findsNothing);
+  });
+
+  testWidgets('列表项：无显示名时回退——主行邮箱号、次行「状态 · 协议」',
+      (WidgetTester tester) async {
+    await _pumpApp(
+      tester,
+      await _newController(),
+      api: _seededApi(const [
+        AccountCredentials(email: 'zoe@outlook.com', clientId: 'c', refreshToken: 'r'),
+      ]),
+    );
+
+    // 未检测（无显示名）：主行仍是邮箱号，次行保留状态文案。
+    expect(find.text('zoe@outlook.com'), findsOneWidget);
+    expect(find.text('未知 · Graph'), findsOneWidget);
+  });
+
   testWidgets('首页渲染核心元素', (WidgetTester tester) async {
     await _pumpApp(tester, await _newController());
 
     expect(find.text('邮箱管理'), findsOneWidget);
     expect(find.byType(PopupMenuButton<String>), findsOneWidget);
-    // 汇总取自实际载入的账号数：3 个全部占位为有效、错误 0。
-    expect(find.text('3'), findsNWidgets(2));
-    expect(find.text('0'), findsOneWidget);
+    // 汇总取自落盘账号：3 个刚载入均为「未知」→ 总数 3、有效 0、异常 0。
+    expect(find.text('3'), findsOneWidget);
+    expect(find.text('0'), findsNWidgets(2));
 
     // 搜索框与列表项（来自已持久化的账号）
     expect(find.text('搜索邮箱号'), findsOneWidget);

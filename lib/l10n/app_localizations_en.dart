@@ -48,6 +48,25 @@ class AppLocalizationsEn extends AppLocalizations {
   String get mailMarkedUnread => 'Marked as unread';
 
   @override
+  String mailActionFailedToast(String message) {
+    return 'Action failed: $message';
+  }
+
+  @override
+  String get mailEmpty => 'No mail';
+
+  @override
+  String get mailLoadFailed => 'Failed to load mail';
+
+  @override
+  String mailLoadFailedToast(String message) {
+    return 'Load failed: $message';
+  }
+
+  @override
+  String get commonRetry => 'Retry';
+
+  @override
   String get loadMoreLoading => 'Loading...';
 
   @override
@@ -108,6 +127,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get statusPasswordError => 'Password Error';
+
+  @override
+  String get statusUnknown => 'Unknown';
 
   @override
   String get settingsTitle => 'Settings';

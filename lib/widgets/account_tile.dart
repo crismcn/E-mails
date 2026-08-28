@@ -90,7 +90,7 @@ class _AccountTileState extends State<AccountTile>
                     children: [
                       Expanded(
                         child: Text(
-                          widget.account.email,
+                          widget.account.title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -106,7 +106,11 @@ class _AccountTileState extends State<AccountTile>
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${widget.account.status.label(l10n)} · ${widget.account.protocol.label}',
+                    // 有显示名时次行展示邮箱号；否则退回「状态 · 协议」
+                    // （状态另有头像右下角色点表达，不至于丢失）。
+                    widget.account.hasDisplayName
+                        ? widget.account.email
+                        : '${widget.account.status.label(l10n)} · ${widget.account.protocol.label}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(

@@ -1,7 +1,10 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../api/api_scope.dart';
+import '../data/mail_mapper.dart';
 import '../l10n/app_localizations.dart';
 import '../models/mail.dart';
 import '../theme/app_palette.dart';
@@ -10,10 +13,20 @@ import '../theme/app_palette.dart';
 ///
 /// 正文支持 HTML 渲染（[MailMessage.htmlBody] 非空时），否则按纯文本渲染；
 /// HTML 中的超链接 / 按钮链接点击后用外部浏览器打开。视觉参照「邮件详情」设计稿。
+///
+/// 会话页传入的 [MailMessage] 只带 `bodyPreview`（会话查询不含全文），
+/// 故本页在 `initState` 若发现无全文且有 `id`，就按 id 懒取 `body` 并补全。
 class MessageDetailPage extends StatefulWidget {
-  const MessageDetailPage({super.key, required this.message});
+  const MessageDetailPage({
+    super.key,
+    required this.message,
+    required this.accountEmail,
+  });
 
   final MailMessage message;
+
+  /// 所属账号邮箱 —— 供懒取全文时按账号取 token。
+  final String accountEmail;
 
   @override
   State<MessageDetailPage> createState() => _MessageDetailPageState();
@@ -21,6 +34,43 @@ class MessageDetailPage extends StatefulWidget {
 
 class _MessageDetailPageState extends State<MessageDetailPage> {
   bool _starred = false;
+
+  /// 当前展示的消息（懒取全文后会被替换为带 body/htmlBody 的版本）。
+  late MailMessage _message = widget.message;
+
+  /// 正文懒取中 —— 尚无全文时展示占位转圈。
+  bool _loadingBody = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // 无全文（htmlBody/body 皆空）且有 id → 懒取。会话预览的 body 可能已含摘要，
+    // 但为拿到完整 HTML/纯文本仍以 id 取一次权威全文。
+    if (widget.message.id.isNotEmpty && widget.message.htmlBody == null) {
+      _loadingBody = true;
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_loadingBody) _fetchBody();
+  }
+
+  Future<void> _fetchBody() async {
+    final res = await ApiScope.of(
+      context,
+    ).mail.getMessage(widget.accountEmail, widget.message.id);
+    if (!mounted) return;
+    setState(() {
+      if (res.isSuccess && res.data != null) {
+        // 用取回的全文整体重建 —— 列表项只带发件人/主题占位，收件人、完整日期、
+        // 正文都以权威的 getMessage 结果为准。
+        _message = applyBody(mailMessageFromGraph(res.data!), res.data!);
+      }
+      _loadingBody = false;
+    });
+  }
 
   /// 打开正文中的链接（超链接 / 按钮）—— 外部浏览器，失败时提示。
   Future<bool> _openUrl(String url) async {
@@ -47,7 +97,7 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final message = widget.message;
+    final message = _message;
     return Scaffold(
       backgroundColor: palette.background,
       body: SafeArea(
@@ -85,7 +135,10 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    _Body(message: message, onTapUrl: _openUrl),
+                    if (_loadingBody)
+                      _BodyLoading(preview: message.body)
+                    else
+                      _Body(message: message, onTapUrl: _openUrl),
                   ],
                 ),
               ),
@@ -209,6 +262,39 @@ class _Body extends StatelessWidget {
     return SelectableText(
       message.body,
       style: TextStyle(color: palette.textPrimary, fontSize: 16, height: 1.55),
+    );
+  }
+}
+
+/// 正文懒取中 —— 先展示已有预览文字 + 一行转圈，避免整页空白。
+class _BodyLoading extends StatelessWidget {
+  const _BodyLoading({required this.preview});
+
+  final String preview;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (preview.isNotEmpty)
+          Text(
+            preview,
+            style: TextStyle(
+              color: palette.textSecondary,
+              fontSize: 16,
+              height: 1.55,
+            ),
+          ),
+        const SizedBox(height: 16),
+        Center(
+          child: CupertinoActivityIndicator(
+            radius: 12,
+            color: palette.textSecondary,
+          ),
+        ),
+      ],
     );
   }
 }

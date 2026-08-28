@@ -66,7 +66,7 @@ class _EmailManagerAppState extends State<EmailManagerApp> {
               onGenerateTitle: (context) =>
                   AppLocalizations.of(context).appTitle,
               debugShowCheckedModeBanner: false,
-              scrollBehavior: const NoStretchScrollBehavior(),
+              scrollBehavior: const SmallBounceScrollBehavior(),
               themeMode: settings.themeMode,
               theme: AppTheme.light,
               darkTheme: AppTheme.dark,

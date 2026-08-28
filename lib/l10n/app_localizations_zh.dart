@@ -48,6 +48,25 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mailMarkedUnread => '已标记为未读';
 
   @override
+  String mailActionFailedToast(String message) {
+    return '操作失败：$message';
+  }
+
+  @override
+  String get mailEmpty => '暂无邮件';
+
+  @override
+  String get mailLoadFailed => '邮件加载失败';
+
+  @override
+  String mailLoadFailedToast(String message) {
+    return '加载失败：$message';
+  }
+
+  @override
+  String get commonRetry => '重试';
+
+  @override
   String get loadMoreLoading => '加载中...';
 
   @override
@@ -108,6 +127,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get statusPasswordError => '密码错误';
+
+  @override
+  String get statusUnknown => '未知';
 
   @override
   String get settingsTitle => '设置';

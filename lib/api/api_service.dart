@@ -1,6 +1,8 @@
 import 'auth_api.dart';
 import 'mail_api.dart';
+import 'user_api.dart';
 import '../core/auth/credentials_store.dart';
+import '../core/auth/health_service.dart';
 import '../core/auth/token_service.dart';
 import '../core/auth/token_store.dart';
 import '../core/network/api_client.dart';
@@ -31,6 +33,7 @@ class ApiService {
     required this.mail,
     required this.tokenService,
     required this.credentialsStore,
+    required this.health,
   });
 
   final AuthApi auth;
@@ -38,10 +41,15 @@ class ApiService {
   final TokenService tokenService;
   final CredentialsStore credentialsStore;
 
+  /// 账号健康检测（两步：刷 token + `GET /me`）。
+  final HealthService health;
+
   factory ApiService.create({
     TokenStore? tokenStore,
     CredentialsStore? credentialsStore,
     SecureStorage? secureStorage,
+    MailApi? mailApi,
+    HealthService? healthService,
   }) {
     final tokens = tokenStore ?? InMemoryTokenStore();
     // 默认用安全存储持久化凭据；测试可注入 InMemoryCredentialsStore。
@@ -61,13 +69,23 @@ class ApiService {
     // 鉴权拦截器 → Graph 客户端 → MailApi。
     final graphDio =
         DioClientFactory.buildGraphDio(AuthInterceptor(tokenService));
-    final mailApi = MailApi(ApiClient(graphDio));
+    // 可注入 MailApi（测试假实现）；默认装配真实 Graph 客户端。
+    final mail = mailApi ?? MailApi(ApiClient(graphDio));
+
+    // 健康检测：走裸 Graph 客户端（自带 Bearer），不复用邮件 token 缓存。
+    final health = healthService ??
+        HealthService(
+          authApi: authApi,
+          userApi: UserApi(ApiClient(DioClientFactory.buildPlainGraphDio())),
+          credentialsStore: creds,
+        );
 
     return ApiService._(
       auth: authApi,
-      mail: mailApi,
+      mail: mail,
       tokenService: tokenService,
       credentialsStore: creds,
+      health: health,
     );
   }
 
@@ -80,4 +98,8 @@ class ApiService {
 
   /// 已持久化的账号邮箱列表（供启动后展示 / 批量操作）。
   Future<List<String>> knownAccounts() => credentialsStore.listEmails();
+
+  /// 已持久化的账号完整记录（含状态/用户信息）—— 供首页按落盘数据渲染与统计。
+  Future<List<AccountCredentials>> knownAccountRecords() =>
+      credentialsStore.findAll();
 }

@@ -91,10 +91,10 @@ ApiException _mapBadResponse(DioException e, StackTrace? stackTrace) {
   String message = _extractMessage(body) ?? 'HTTP $status';
   final oauthError = _extractOAuthError(body);
 
-  // 归一化业务码：401 / invalid_grant 归鉴权失败，其余按 HTTP 状态。
+  // 归一化业务码：401 / OAuth 凭据类错误归鉴权失败，其余按 HTTP 状态。
   int code;
   ApiErrorType type;
-  if (status == 401 || oauthError == 'invalid_grant') {
+  if (status == 401 || _isOAuthAuthError(oauthError)) {
     code = ApiCode.unauthorized;
     type = ApiErrorType.auth;
   } else if (status == 403) {
@@ -144,3 +144,24 @@ String? _extractOAuthError(Object? body) {
   final error = body['error'];
   return error is String ? error : null;
 }
+
+/// OAuth 的 `error` 是否为「凭据/授权层面」的失败 —— 这类错误重试也没用，
+/// 需要用户重新授权并重新导入，故统一归到 [ApiCode.unauthorized]，
+/// 让健康检测把账号标记为凭据失效（而非笼统的业务错误、被误当「正常」）。
+///
+/// 覆盖的典型码：
+/// - `invalid_grant`：refresh_token 过期 / 被撤销；
+/// - `invalid_client` / `unauthorized_client`：client_id 无效或应用未在该租户注册
+///   （对应 AADSTS700016：导入的凭据 client_id 在账号所属目录里查不到）；
+/// - `invalid_scope`：申请的 scope 未被授权；
+/// - `interaction_required` / `consent_required`：需要用户重新交互授权。
+bool _isOAuthAuthError(String? oauthError) => switch (oauthError) {
+  'invalid_grant' ||
+  'invalid_client' ||
+  'unauthorized_client' ||
+  'invalid_scope' ||
+  'interaction_required' ||
+  'consent_required' => true,
+  _ => false,
+};
+

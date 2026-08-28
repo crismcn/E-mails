@@ -95,6 +95,29 @@ void main() {
       final read = await store.find('a@outlook.com');
       expect(read!.refreshToken, 'RT');
       expect(read.password, 'pw');
+      // 导入即「未知」状态（尚未检测）。
+      expect(read.status, AccountCredentials.statusUnknown);
+    });
+
+    test('状态与账号信息可落盘并回读，findAll 返回完整记录', () async {
+      await store.update(const AccountCredentials(
+        email: 'a@outlook.com',
+        clientId: 'c',
+        refreshToken: 'r',
+        status: AccountCredentials.statusValid,
+        displayName: '张三',
+        address: 'a@outlook.com',
+        userId: 'u-1',
+      ));
+
+      final read = await store.find('a@outlook.com');
+      expect(read!.status, AccountCredentials.statusValid);
+      expect(read.displayName, '张三');
+      expect(read.userId, 'u-1');
+
+      final all = await store.findAll();
+      expect(all, hasLength(1));
+      expect(all.single.displayName, '张三');
     });
   });
 }

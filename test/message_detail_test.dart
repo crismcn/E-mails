@@ -8,8 +8,12 @@ import 'package:email_manager/core/auth/credentials_store.dart';
 import 'package:email_manager/main.dart';
 import 'package:email_manager/settings/settings_controller.dart';
 
-/// 打开「首页 → 邮件列表 → 会话页」，停在「蓝湖官方」会话。
-Future<void> _pumpThread(WidgetTester tester) async {
+import 'fake_mail_api.dart';
+
+/// 打开「首页 → 邮件列表」，邮件数据来自注入的 [FakeMailApi]。
+///
+/// 现在点击列表项**直接进入详情页**（会话页已移除），详情页按 id 懒取全文。
+Future<void> _pumpList(WidgetTester tester) async {
   tester.view.physicalSize = const Size(1080, 2340);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.resetPhysicalSize);
@@ -25,6 +29,7 @@ Future<void> _pumpThread(WidgetTester tester) async {
         refreshToken: 'r',
       ),
     ]),
+    mailApi: FakeMailApi(),
   );
   await tester.pumpWidget(
     EmailManagerApp(settings: SettingsController(prefs), api: api),
@@ -33,19 +38,19 @@ Future<void> _pumpThread(WidgetTester tester) async {
 
   await tester.tap(find.text('alice@outlook.com'));
   await tester.pumpAndSettle();
-  await tester.tap(find.text('蓝湖官方'));
-  await tester.pumpAndSettle();
 }
 
 void main() {
-  testWidgets('点击最新消息气泡 → 详情页渲染 HTML 与可点击链接', (WidgetTester tester) async {
-    await _pumpThread(tester);
+  testWidgets('点击列表项 → 直接进入详情页，懒取 HTML 全文并渲染可点击链接', (
+    WidgetTester tester,
+  ) async {
+    await _pumpList(tester);
 
-    // 最新一条气泡展示纯文本预览（含「尊敬的用户」），点击进入详情。
-    await tester.tap(find.textContaining('尊敬的用户'));
+    // 「蓝湖官方」对应最新未读消息 c3-3（HTML 全文）。
+    await tester.tap(find.text('蓝湖官方'));
     await tester.pumpAndSettle();
 
-    // 详情页：收件人行 + HTML 正文（链接文字、按钮文字）。
+    // 详情页懒取全文后：收件人行 + HTML 正文（链接文字、按钮文字）。
     // HtmlWidget 用 RichText 渲染，需 findRichText: true 才能匹配其中文本。
     expect(find.text('收件人：'), findsOneWidget);
     expect(find.byType(HtmlWidget), findsOneWidget);
@@ -56,22 +61,23 @@ void main() {
     expect(find.textContaining('前往安全中心', findRichText: true), findsOneWidget);
   });
 
-  testWidgets('点击历史消息气泡 → 详情页按纯文本渲染', (WidgetTester tester) async {
-    await _pumpThread(tester);
+  testWidgets('点击列表项 → 详情页懒取纯文本全文按纯文本渲染', (WidgetTester tester) async {
+    await _pumpList(tester);
 
-    // 历史气泡正文为主题文字，取最上面一条点击进入详情（无 HTML）。
-    await tester.tap(find.text('蓝湖免费版权益调整通知 尊敬的蓝湖用户').first);
+    // 「Claude」对应 m1，全文为纯文本。
+    await tester.tap(find.text('Claude'));
     await tester.pumpAndSettle();
 
     expect(find.text('收件人：'), findsOneWidget);
     expect(find.byType(HtmlWidget), findsNothing);
     expect(find.byType(SelectableText), findsOneWidget);
+    expect(find.textContaining('纯文本正文'), findsOneWidget);
   });
 
   testWidgets('详情页星标点击切换', (WidgetTester tester) async {
-    await _pumpThread(tester);
+    await _pumpList(tester);
 
-    await tester.tap(find.textContaining('尊敬的用户'));
+    await tester.tap(find.text('蓝湖官方'));
     await tester.pumpAndSettle();
 
     expect(find.byIcon(Icons.star_border), findsOneWidget);

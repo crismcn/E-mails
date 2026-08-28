@@ -15,6 +15,17 @@
   "mailDeleted": "已删除",
   "mailMarkedRead": "已标记为已读",
   "mailMarkedUnread": "已标记为未读",
+  "mailActionFailedToast": "操作失败：{message}",
+  "@mailActionFailedToast": {
+    "placeholders": { "message": { "type": "String" } }
+  },
+  "mailEmpty": "暂无邮件",
+  "mailLoadFailed": "邮件加载失败",
+  "mailLoadFailedToast": "加载失败：{message}",
+  "@mailLoadFailedToast": {
+    "placeholders": { "message": { "type": "String" } }
+  },
+  "commonRetry": "重试",
   "loadMoreLoading": "加载中...",
   "loadMoreNoMore": "没有更多邮件",
   "menuImport": "导入",
@@ -38,6 +49,7 @@
   "statusValid": "有效",
   "statusTokenExpired": "Token 过期",
   "statusPasswordError": "密码错误",
+  "statusUnknown": "未知",
   "settingsTitle": "设置",
   "settingsAppearance": "外观",
   "settingsTheme": "主题",

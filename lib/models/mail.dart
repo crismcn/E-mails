@@ -6,9 +6,18 @@ class MailPreview {
     required this.sender,
     required this.subject,
     required this.time,
+    this.id = '',
+    this.conversationId = '',
     this.unread = 0,
     this.count = 0,
   });
+
+  /// 服务端消息 id（Graph `message.id`）—— 供列表项去重与后续读/删操作定位。
+  /// mock 数据留空。
+  final String id;
+
+  /// 会话标识（Graph `conversationId`）—— 供点开后拉取整个会话。mock 数据留空。
+  final String conversationId;
 
   /// 发件人显示名。
   final String sender;
@@ -27,6 +36,8 @@ class MailPreview {
 
   /// 复制并覆盖部分字段（用于标记已读/未读等本地状态变更）。
   MailPreview copyWith({
+    String? id,
+    String? conversationId,
     String? sender,
     String? subject,
     String? time,
@@ -34,6 +45,8 @@ class MailPreview {
     int? count,
   }) {
     return MailPreview(
+      id: id ?? this.id,
+      conversationId: conversationId ?? this.conversationId,
       sender: sender ?? this.sender,
       subject: subject ?? this.subject,
       time: time ?? this.time,
@@ -51,6 +64,7 @@ class MailMessage {
     required this.sender,
     required this.time,
     required this.body,
+    this.id = '',
     this.unread = false,
     this.recipient = '',
     this.subject = '',
@@ -60,6 +74,9 @@ class MailMessage {
 
   /// 发件人显示名。
   final String sender;
+
+  /// Graph 消息 id —— 供详情页按 id 懒取全文。mock 数据留空。
+  final String id;
 
   /// 消息时间标签（如 `8/24 15:00`）。
   final String time;
@@ -81,6 +98,31 @@ class MailMessage {
 
   /// 富文本 HTML 正文；为 null 时详情页用 [body] 走纯文本渲染。
   final String? htmlBody;
+
+  /// 复制并覆盖部分字段 —— 主要用于懒取全文后并入 body / htmlBody。
+  MailMessage copyWith({
+    String? sender,
+    String? id,
+    String? time,
+    String? body,
+    bool? unread,
+    String? recipient,
+    String? subject,
+    String? fullDate,
+    String? htmlBody,
+  }) {
+    return MailMessage(
+      sender: sender ?? this.sender,
+      id: id ?? this.id,
+      time: time ?? this.time,
+      body: body ?? this.body,
+      unread: unread ?? this.unread,
+      recipient: recipient ?? this.recipient,
+      subject: subject ?? this.subject,
+      fullDate: fullDate ?? this.fullDate,
+      htmlBody: htmlBody ?? this.htmlBody,
+    );
+  }
 }
 
 /// 头像柔和底色候选 —— 与设计稿观感一致（紫 / 粉 / 青 / 蓝 / 橙）。

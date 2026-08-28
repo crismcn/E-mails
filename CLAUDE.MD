@@ -1,1 +1,248 @@
-                                                                                                                             
+# Email Manager · 产品规范文档
+
+> 本文件是项目的单一事实来源（产品 / 设计 / 开发约定）。给协作者与 AI 助手阅读。
+> 约定：**本项目后续所有对话一律使用中文回复。**
+
+---
+
+## 1. 产品定位
+
+**Email Manager（工程名 `email_manager`）** 是一款面向「**批量管理大量 Outlook / Microsoft 邮箱账号**」的 Flutter 移动端 App（iOS + Android）。
+
+它不是给普通用户收发个人邮件用的客户端，而是给需要**同时持有并运维成百上千个微软邮箱**的场景使用：批量导入账号凭据、批量体检账号可用性、快速查看每个账号的收件箱与邮件详情。
+
+**一句话**：把一堆微软邮箱的「能不能用 + 里面有什么信」集中管起来。
+
+### 核心价值
+- **批量**：一次导入 N 个账号，一次勾选 N 个账号做健康检测 / 删除。
+- **可信**：直连微软官方 OAuth + Microsoft Graph，账号可用性是「此刻真打接口」得出的真实结论，而非本地猜测。
+- **安全**：长期敏感凭据（refresh_token / client_id / password）走系统安全存储（Keychain / Keystore），短期 access_token 只留内存。
+
+---
+
+## 2. 目标用户与典型场景
+
+| 用户 | 场景 |
+|---|---|
+| 邮箱资源运维 / 采购者 | 手上有大批采购来的微软邮箱，需要定期确认哪些还活着、哪些 token 过期 |
+| 需要按账号查信的人 | 点开某个账号 → 看它的收件箱列表 → 读某封邮件详情（含 HTML 富文本） |
+
+典型动线：
+1. **导入**：粘贴 / 选 CSV，把 `邮箱----密码----client_id----refresh_token----创建时间` 批量导入 → 落安全存储。
+2. **总览**：首页看总数 / 有效 / 异常统计，滚动浏览账号列表与状态点。
+3. **体检**：长按进多选 → 勾选若干 → 「健康检测」→ 汇总「正常 X / 异常 Y」，异常账号状态点变色。
+4. **查信**：点账号 → 邮件列表（Graph 真实收件箱）→ 点邮件 → 详情页（HTML 渲染，自动标已读）。
+5. **清理**：多选 → 删除（二次确认）→ 从安全存储移除。
+
+---
+
+## 3. 信息架构与页面
+
+| 页面 | 文件 | 说明 |
+|---|---|---|
+| 首页 / 账号总览 | `lib/pages/home_page.dart` | 三统计卡 + 账号列表；吸顶头部（标题上滑被汇总覆盖后固定）；长按进多选，底部操作栏（健康检测 / 删除 / 全选）；右上角「…」菜单 → 导入 / 设置 |
+| 导入邮箱 | `lib/pages/import_page.dart` | CSV 文件导入 + 文本粘贴导入；格式说明卡；底部「确认导入」落安全存储 |
+| 邮件列表 | `lib/pages/mail_list_page.dart` | 某账号的 Graph 真实收件箱；下拉刷新 / 上滑翻页（`$skip`）；左滑归档 / 已读 / 删除；点击进详情并自动标已读 |
+| 邮件详情 | `lib/pages/message_detail_page.dart` | 单封邮件；懒取全文；HTML 富文本渲染（非 HTML 走纯文本）；收件人 / 完整日期 |
+| 设置 | `lib/pages/settings_page.dart` | 主题（跟随系统 / 暗黑 / 亮白）+ 语言（中文 / English），分段控件切换，即时持久化 |
+
+> 设计稿（仓库根）：`邮件列表.jpg`、`邮件列表消息.jpg`、`邮件详情.jpg`、`长按操作.jpg`。新页面要求 **1:1 还原设计稿**。
+> 会话/对话视图（`mail_thread_page`）已按用户要求移除——列表点击**直达详情页**；但 `MailApi.listConversation` 接口保留，日后可复用。
+
+---
+
+## 4. 设计规范
+
+### 4.1 主题与配色
+- 颜色**不硬编码**。全部走 `lib/theme/app_palette.dart` 的 `AppPalette extends ThemeExtension`，含 `AppPalette.dark` / `AppPalette.light` 两套，取色用 `context.palette.xxx`。
+- `lib/theme/app_theme.dart` 的 `AppTheme.light/dark` 把 palette 挂到 `ThemeData.extensions`。
+- 暗色基调：背景 `#0A0D12`、卡片 `#141A24`、主蓝 `#2F80FF`。亮色为白底。
+- 状态色：有效（绿）/ 警告·token 过期（黄）/ 错误·密码错误（红）/ 未知（中性灰）。
+- **新增组件一律用 `context.palette`，不要引入固定颜色常量类。**
+
+### 4.2 字号与间距（2026-08-27 收紧后的尺度）
+- 首页标题 22、统计卡数字 24 / 标签 12、列表主文本 16、次要文本 14、小字 12、搜索框 14。
+- 首页吸顶头部三段高度 62 / 66 / 42；多选顶栏高度常量 `_kSelTopBarHeight` 必须 == 标题条 `_titleBand`（62），二者靠此抵消保证进出多选净高不跳。
+
+### 4.3 滚动手感（约定：轻微且迅速的回弹）
+- 全局 `lib/theme/app_scroll_behavior.dart` 的 `SmallBounceScrollBehavior`（挂 `MaterialApp.scrollBehavior`），物理 `_SnappyBouncePhysics`：小幅过冲 + 干脆收口（比 iOS 默认更硬）。
+- 两个可复用常量：`snappyFrictionFactor(f)=0.4*(1-f)^2`（越小越硬）、`kSnappySpring`（临界阻尼、不来回晃）。
+- **坑**：`MaterialApp.scrollBehavior` 管不到 `EasyRefresh` 内部。用 `EasyRefresh` 的页面（首页 / 邮件列表）必须显式传 `spring: kSnappySpring, frictionFactor: snappyFrictionFactor`。
+- 不要 Android 边缘发光 / 拉伸，只要位移回弹。回归测试 `test/scroll_bounce_test.dart`。
+
+### 4.4 多语言（i18n）
+- 官方 gen-l10n。配置 `l10n.yaml`（arb-dir/output-dir 均 `lib/l10n`，template = `app_zh.arb`，`nullable-getter: false`）。
+- 文案写在 `lib/l10n/app_zh.arb` / `app_en.arb`，**改文案后跑 `flutter gen-l10n` 重新生成** `AppLocalizations`。
+- 取文案：`AppLocalizations.of(context).xxx`。语言标签「中文」「English」按惯例各显本名、不本地化。
+
+### 4.5 EasyRefresh 指示器约定
+- 共用指示器在 `lib/widgets/app_refresh.dart`。两条硬约束：
+  1. **收起时整体不入树**：`build` 开头 `if (state.offset <= 0) return const SizedBox.shrink();`，否则 `CupertinoActivityIndicator` 常驻空转 → 所有 `pumpAndSettle` 超时。
+  2. **`processedDuration` 是一次性 Timer**：测试触发刷新 / 加载后需额外 `await tester.pump(const Duration(milliseconds: 400))`，否则报「Timer still pending」。
+- 子 `ListView` **不要显式设 `physics`**（会盖掉全局回弹）。
+
+---
+
+## 5. 技术架构
+
+### 5.1 分层
+```
+UI 页面 (pages / widgets)
+  └─ ApiScope (InheritedWidget 组合根注入) / SettingsScope
+       └─ ApiService（组合根，装配下列部件）
+            ├─ AuthApi        直连微软 OAuth 换 token
+            ├─ MailApi        Microsoft Graph 收件箱 / 邮件
+            ├─ UserApi        Graph GET /me（健康检测用）
+            ├─ TokenService   access_token 缓存 + 并发刷新合流
+            ├─ HealthService  两步体检（刷 token + GET /me）
+            └─ CredentialsStore  安全存储的长期凭据
+```
+
+### 5.2 网络层（`lib/core/network/`）
+- **dio 5.11**，直连微软，无自建后端。
+- 内部统一契约 `ApiResponse<T>{code,message,data}`（`api_response.dart`）——微软本身**不是**这个格式（OAuth form-urlencoded、Graph 资源 JSON / `{error:{code,message}}`），由 `error_mapper.mapError()` + `ApiClient` 归一化。
+- 业务码 `api_code.dart`（ok=0 / unauthorized=401 / network=-1 / timeout=-2 / parse=-4 …，含 `isSuccess` / `isAuthFailure`）。
+- `dio_client.dart` 造三种 Dio：`buildAuthDio()`（form 编码、无 Bearer）、`buildGraphDio(authInterceptor)`、`buildPlainGraphDio()`（无鉴权，健康检测显式传 Bearer 用，避免污染邮件 token 缓存）。
+- 拦截器：`app_log_interceptor`（仅 debug，脱敏 Authorization/password/token）、`auth_interceptor`（`QueuedInterceptorsWrapper`，靠 `options.extra['account']` 取 token 注入 Bearer，401 强制刷新重试一次防递归）。
+
+### 5.3 认证与存储（`lib/core/auth/` + `lib/core/storage/`）
+- **flutter_secure_storage 11**（默认 AES-GCM）。自建抽象 `SecureStorage` + `FlutterSecureStorageAdapter`，测试用内存假实现免平台通道。
+- `SecureCredentialsStore`：每账号凭据 JSON 存于键 `cred.<email>`，`listEmails` 靠 `readAll` 过滤前缀。
+- **安全决策**：只有长期敏感凭据（refresh_token / client_id / password）落安全存储；**access_token 只在内存**（1h 寿命、冷启动重刷），减少落盘短期令牌攻击面。
+- `TokenService`：同账号并发刷新用 `Map<String,Future>` 合流去重；轮换的 refresh_token 回写凭据。
+
+### 5.4 数据映射（纯函数，`lib/data/`）
+- `account_import.dart` `parseImportText`：逐行按 `----` 拆分（回退逗号 / CSV），字段 `邮箱----密码----client_id----refresh_token----创建时间`，≥5 字段且首字段合法邮箱才有效。
+- `mail_mapper.dart`：`mailPreviewFromGraph` / `mailMessageFromGraph` / `formatMailTime`（今天 `HH:mm`、今年 `M/D`、更早 `YYYY/M/D`，**UTC→本地再比日期**）等。
+
+---
+
+## 6. 微软集成关键约束（务必牢记）
+
+- **OAuth 端点用 `common` 租户**（`/common/oauth2/v2.0/token`）：个人 Outlook + 组织账号都收（用 `consumers` 会挡掉组织账号）。
+- **`defaultScope = 'https://graph.microsoft.com/.default'`**：换取该账号**已授权的全部**权限，不写死具体 scope。原因：OAuth 规则「请求的任一 scope 未授权 → 整个请求 AADSTS70000 失败」；导入的批量账号往往只授权了 `Mail.Read`（无 `Mail.ReadWrite`/`Mail.Send`），写死会连读都拉不到 token。`.default` 只取已同意权限：只有 `Mail.Read` → 能读；额外授权 `Mail.ReadWrite`/`Send` → 写也能用。
+- **健康检测 = 两步**：刷 token（scope 显式带 `User.Read offline_access`）**+ 真打 `GET /me`**，两步都过才算 ok。刻意不复用 `TokenService`（那里缓存邮件 scope token）。
+- **scope 在初始授权时锁死**，无法给已有 token 补授权；要新增权限（如标已读 `Mail.ReadWrite`、发信 `Mail.Send`）必须**重新走 OAuth 换新 token**。个人 outlook 被微软禁 ROPC，纯账号密码无人值守换 token 不可行，需浏览器登录 + 同意。
+- 换 token 工具：`api-test/get-token.mjs`（Node，授权码流 + PKCE，起 localhost:3000 回调）。已注册 Azure 应用 **clientId `2955bdca-22de-4829-80e8-1908618c7f49`**（见 `MAIL-TOOLS.MD`），重定向 `http://localhost:3000`，公共客户端 + PKCE 无 secret。换到的 token 追加到 `api-test/tokens.txt`（`api-test/` 已 gitignore）。**换到新 token 导入后 App 无需改代码**（`.default` 自动带新权限）。
+- 常见错误码：`AADSTS70000`（请求了未授权 scope）、`AADSTS700016 / unauthorized_client`（client_id 无效）。`error_mapper._isOAuthAuthError` 已把 `invalid_grant/invalid_client/unauthorized_client/invalid_scope/interaction_required/consent_required` 归到 `unauthorized`，健康检测据此标红。
+
+---
+
+## 7. 目录结构
+
+```
+lib/
+  main.dart                 组合根：ApiScope + SettingsScope + MaterialApp
+  api/                      对外接口 + 注入
+    api_scope.dart          ApiService 的 InheritedWidget 注入
+    api_service.dart        组合根工厂 create() + saveImported/knownAccounts
+    auth_api.dart / mail_api.dart / user_api.dart
+  core/
+    network/                dio 封装、统一契约、错误映射、拦截器
+    auth/                   token_store / token_service / credentials_store / health_service
+    storage/                secure_storage 抽象
+  data/                     account_import / mail_mapper（纯函数）/ mock_mails
+  models/                   account.dart / mail.dart
+  pages/                    home / import / mail_list / message_detail / settings
+  widgets/                  stat_card / account_tile / mail_tile / app_refresh / segmented_selector
+  theme/                    app_palette / app_theme / app_scroll_behavior / app_page_route
+  settings/                 settings_controller（ChangeNotifier + shared_preferences）
+  l10n/                     app_zh.arb / app_en.arb + 生成的 AppLocalizations
+test/                       单元 + widget 测试（详见 §9）
+api-test/                   Node 换 token 脚本（gitignore，不入库）
+```
+
+---
+
+## 8. 技术栈与依赖
+
+- **Flutter 3.47 / Dart SDK ^3.13**，目标平台 iOS + Android。
+- 状态：轻量自建（`ChangeNotifier` + `InheritedWidget`/`InheritedNotifier`），**未引入 Riverpod / Bloc**（历史上评估过 Riverpod 3，当前工程未用）。
+- 关键依赖：`dio ^5.11`、`flutter_secure_storage ^11`、`shared_preferences ^2.3`、`file_picker ^12`（v12 用**静态方法** `FilePicker.pickFile`）、`flutter_slidable ^4`、`easy_refresh ^3.5`、`flutter_widget_from_html_core ^0.17`、`url_launcher ^6.3`、`intl`、`flutter_localizations`。
+- 图标：`flutter_launcher_icons`（`dart run flutter_launcher_icons` 从 logo 生成）。
+- **Android**：`compileSdk` 显式 37（flutter_secure_storage 11 要求）；main manifest 已补 `INTERNET` 权限。
+
+---
+
+## 9. 开发与测试约定
+
+### 9.1 提交前必做
+1. `flutter analyze` —— 必须**零问题**。
+2. `flutter test` —— 全量通过（当前约 74–77 用例区间，随功能增减）。
+3. 改了 arb 文案 → `flutter gen-l10n`。
+4. 尽快 commit（历史上曾整套 MVP 文件丢失、无 commit，务必防再次丢失）。
+
+### 9.2 测试约定
+- 网络相关用**依赖注入假实现**，不打真网：`ApiService.create(mailApi:, healthService:, credentialsStore:)` 全部可注入。
+- `test/fake_mail_api.dart` 的 `FakeMailApi`（继承真 `MailApi` 覆盖方法，`super(ApiClient(Dio()))`）；健康检测走真网的路径测试里用 `_FakeHealthService` 替换。
+- 假数据主题需含「蓝湖 / 蓝湖官方」等原文，既有断言按该文本定位。
+- EasyRefresh 触发后补 `pump(400ms)`（见 §4.5）。
+- 断言「不可见」注意：`find.text` 会命中 `Opacity(0)`/`ClipRect` 里仍在树中的文本；要么 `f==0` 时 `SizedBox.shrink()` 移出树，要么换断言方式。push 后上一路由 offstage，`find.text` 默认 `skipOffstage:true`。
+
+### 9.3 环境坑
+- node 在 `/usr/local/bin/node`（v22）、flutter SDK 在 `/Volumes/WD2T/ENV/Flutter/flutter/bin`，**都不在默认 PATH**，跑命令要显式加 PATH。
+
+### 9.4 运行命令
+```bash
+export PATH="/Volumes/WD2T/ENV/Flutter/flutter/bin:$PATH"
+flutter pub get
+flutter analyze
+flutter test
+flutter run                 # 需已 booted 的模拟器 / 真机
+flutter gen-l10n            # 改 arb 后
+node api-test/get-token.mjs <邮箱> [密码]   # 换新 token（需 /usr/local/bin/node 在 PATH）
+```
+
+---
+
+## 10. 现状与路线图
+
+### 已完成
+- 首页总览（统计卡实时计算 total/valid/error、账号列表、吸顶头部、长按多选 + 底部操作栏、健康检测 / 删除 / 全选）。
+- 导入（粘贴 + CSV）→ 落安全存储 → 启动载入。
+- 邮件列表接 Graph 真实收件箱（下拉刷新 / 上滑翻页 / 去重 / 错误页原样展示 AADSTS）。
+- 邮件详情懒取全文 + HTML 渲染；点击列表项**直达详情并自动标已读**（乐观更新 + 失败回滚）。
+- 健康检测两步验证（刷 token + `GET /me`），模拟器双账号实测通过。
+- 设置：主题 / 语言运行时切换 + 持久化。安全存储、错误映射、并发刷新合流。
+
+### 待办（来自 `TODO.MD`，按用户优先级）
+1. **导入调整**：导入的账号状态设为「未知」（不再默认「有效」）。
+2. **首页调整**：列表状态新增「未知」；修复「下拉刷新把状态重置回有效」；统计卡按安全存储数据统计。
+3. **检测调整**：健康检测接口获取用户信息，与账号**一起落盘安全存储**。
+4. 归档 / 删除邮件回写 Graph（当前仅本地态）。
+5. 发信能力（需 `Mail.Send`，依赖重新授权换 token）。
+
+---
+
+## 11. 待你决策的补充建议（我补充、供你选择）
+
+以下是当前没列进 TODO、但对这类「批量账号运维」产品通常重要的点。**按优先级排，均待你拍板**，未确认前我不擅自实现：
+
+**A. 数据与可靠性**
+- A1. **账号状态与用户信息落盘 + 冷启动展示**：现在 access_token 只在内存、状态每次现算，冷启动列表全是「未知」。建议把「上次检测状态 + 检测时间 + 显示名 / 头像」随凭据落盘，启动即展示（配合 TODO 2/3）。
+- A2. **全量 / 定时健康检测**：现仅手动勾选检测。可加「一键全体检」与「后台定时体检」，异常账号置顶。
+- A3. **导出**：导入的对偶——把账号（可选是否含敏感字段）导出为 CSV / 文本备份（曾有 `邮箱账户导出_*.txt` 痕迹，说明有此需求）。
+
+**B. 规模与性能**
+- B1. **列表虚拟化 / 分页持久化**：账号量大（数百上千）时，首页与统计需分页 / 懒加载，避免一次性读全量安全存储。
+- B2. **搜索升级**：当前是「已加载内过滤」，账号多时需服务端 / 全量索引搜索。
+- B3. **并发限流**：批量体检对同一 IP 大量打微软接口可能触发限流（429），建议加并发上限 + 退避重试。
+
+**C. 安全与合规**
+- C1. **应用锁**：进入 App 需生物识别 / PIN（管理大量凭据，泄露风险高）。
+- C2. **敏感信息展示策略**：列表 / 导出默认打码 refresh_token / 密码，按需揭示。
+- C3. **审计日志**：记录「谁在何时删了 / 检测了哪些账号」，误删可追溯。
+
+**D. 体验**
+- D1. **状态筛选 / 分组**：按状态（有效 / 过期 / 未知）筛选与分组，运维更聚焦。
+- D2. **批量重新授权向导**：把 `get-token.mjs` 的换 token 流程做进 App（WebView + 授权码流），避免命令行。
+- D3. **未读数真实填充**：`Account.unread` 目前占位，可用 Graph 拉真实未读。
+- D4. **空 / 错误态文案与重试**：统一各页错误态，网络抖动可重试。
+
+**E. 工程**
+- E1. **CI**：GitHub Actions 跑 `analyze + test`（`.github/` 已存在，可补 workflow）。
+- E2. **崩溃 / 日志上报**：release 版接入错误收集。
+- E3. **README 填充**：目前为空，可从本文件裁剪对外说明。
+
+> 想推进哪些，告诉我编号即可；我会先就选中项确认细节再动手。
+

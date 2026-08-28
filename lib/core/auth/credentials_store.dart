@@ -3,14 +3,27 @@ import 'dart:convert';
 import '../../data/account_import.dart';
 import '../storage/secure_storage.dart';
 
-/// 账号的敏感凭据 —— OAuth 用 client_id + refresh_token；password 供 IMAP 备用。
+/// 账号的敏感凭据 + 最近一次的健康状态/账号信息。
+///
+/// OAuth 用 client_id + refresh_token；password 供 IMAP 备用。
+/// [status] 与 [displayName]/[address]/[userId] 是「最近一次健康检测」的落盘结果，
+/// 让首页载入/刷新/统计都以持久化数据为准（而非每次重载都硬编码占位）。
 class AccountCredentials {
   const AccountCredentials({
     required this.email,
     required this.clientId,
     required this.refreshToken,
     this.password,
+    this.status = statusUnknown,
+    this.displayName,
+    this.address,
+    this.userId,
   });
+
+  /// 状态取值 —— 与 UI 层 `AccountStatus.name` 对齐（core 不反向依赖 UI 枚举）。
+  static const String statusUnknown = 'unknown';
+  static const String statusValid = 'valid';
+  static const String statusTokenExpired = 'tokenExpired';
 
   final String email;
   final String clientId;
@@ -19,14 +32,32 @@ class AccountCredentials {
   /// 邮箱密码 —— OAuth 路径用不到，为将来 IMAP 保留（导入数据里带）。
   final String? password;
 
-  AccountCredentials copyWith({String? refreshToken}) => AccountCredentials(
-        email: email,
-        clientId: clientId,
-        refreshToken: refreshToken ?? this.refreshToken,
-        password: password,
-      );
+  /// 最近一次检测结论（`AccountStatus.name`）；未检测为 [statusUnknown]。
+  final String status;
 
-  /// 由导入记录构造。
+  /// 以下三项来自最近一次成功的 `GET /me`，仅健康时有值。
+  final String? displayName;
+  final String? address;
+  final String? userId;
+
+  AccountCredentials copyWith({
+    String? refreshToken,
+    String? status,
+    String? displayName,
+    String? address,
+    String? userId,
+  }) => AccountCredentials(
+    email: email,
+    clientId: clientId,
+    refreshToken: refreshToken ?? this.refreshToken,
+    password: password,
+    status: status ?? this.status,
+    displayName: displayName ?? this.displayName,
+    address: address ?? this.address,
+    userId: userId ?? this.userId,
+  );
+
+  /// 由导入记录构造 —— 状态默认「未知」（尚未检测）。
   factory AccountCredentials.fromImported(ImportedAccount a) =>
       AccountCredentials(
         email: a.email,
@@ -40,6 +71,10 @@ class AccountCredentials {
         'clientId': clientId,
         'refreshToken': refreshToken,
         if (password != null) 'password': password,
+        'status': status,
+        if (displayName != null) 'displayName': displayName,
+        if (address != null) 'address': address,
+        if (userId != null) 'userId': userId,
       };
 
   factory AccountCredentials.fromJson(Map<String, dynamic> json) =>
@@ -48,6 +83,10 @@ class AccountCredentials {
         clientId: json['clientId'] as String,
         refreshToken: json['refreshToken'] as String,
         password: json['password'] as String?,
+        status: json['status'] as String? ?? statusUnknown,
+        displayName: json['displayName'] as String?,
+        address: json['address'] as String?,
+        userId: json['userId'] as String?,
       );
 }
 
@@ -60,6 +99,9 @@ abstract class CredentialsStore {
   Future<void> update(AccountCredentials credentials);
   Future<void> upsertAll(Iterable<AccountCredentials> credentials);
   Future<List<String>> listEmails();
+
+  /// 读取全部账号记录（含状态/用户信息）—— 供首页按落盘数据渲染与统计。
+  Future<List<AccountCredentials>> findAll();
   Future<void> remove(String email);
 }
 
@@ -89,6 +131,9 @@ class InMemoryCredentialsStore implements CredentialsStore {
 
   @override
   Future<List<String>> listEmails() async => _map.keys.toList();
+
+  @override
+  Future<List<AccountCredentials>> findAll() async => _map.values.toList();
 
   @override
   Future<void> remove(String email) async => _map.remove(email);
@@ -133,6 +178,18 @@ class SecureCredentialsStore implements CredentialsStore {
     return [
       for (final key in all.keys)
         if (key.startsWith(_prefix)) key.substring(_prefix.length),
+    ];
+  }
+
+  @override
+  Future<List<AccountCredentials>> findAll() async {
+    final all = await _storage.readAll();
+    return [
+      for (final entry in all.entries)
+        if (entry.key.startsWith(_prefix))
+          AccountCredentials.fromJson(
+            jsonDecode(entry.value) as Map<String, dynamic>,
+          ),
     ];
   }
 

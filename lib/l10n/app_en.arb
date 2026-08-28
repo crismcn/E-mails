@@ -15,6 +15,17 @@
   "mailDeleted": "Deleted",
   "mailMarkedRead": "Marked as read",
   "mailMarkedUnread": "Marked as unread",
+  "mailActionFailedToast": "Action failed: {message}",
+  "@mailActionFailedToast": {
+    "placeholders": { "message": { "type": "String" } }
+  },
+  "mailEmpty": "No mail",
+  "mailLoadFailed": "Failed to load mail",
+  "mailLoadFailedToast": "Load failed: {message}",
+  "@mailLoadFailedToast": {
+    "placeholders": { "message": { "type": "String" } }
+  },
+  "commonRetry": "Retry",
   "loadMoreLoading": "Loading...",
   "loadMoreNoMore": "No more mail",
   "menuImport": "Import",
@@ -38,6 +49,7 @@
   "statusValid": "Valid",
   "statusTokenExpired": "Token Expired",
   "statusPasswordError": "Password Error",
+  "statusUnknown": "Unknown",
   "settingsTitle": "Settings",
   "settingsAppearance": "Appearance",
   "settingsTheme": "Theme",

@@ -117,6 +117,30 @@ void main() {
       expect(resp.code, ApiCode.unauthorized);
       expect(resp.message, 'refresh token 已失效');
     });
+
+    test('OAuth unauthorized_client（AADSTS700016）→ 映射为鉴权失败码', () async {
+      // 400 + unauthorized_client：client_id 未在账号所属目录注册，
+      // 属凭据/授权失败而非普通业务错误，须归一化为 unauthorized，
+      // 健康检测才能据此把账号标记为凭据失效。
+      final adapter = FakeAdapter(
+        statusCode: 400,
+        body: {
+          'error': 'unauthorized_client',
+          'error_description':
+              "AADSTS700016: Application with identifier 'x' was not found",
+        },
+      );
+      final client = ApiClient(_dioWith(adapter));
+
+      final resp = await client.post<dynamic>(
+        '/token',
+        data: {'grant_type': 'refresh_token'},
+        parser: (json) => json,
+      );
+
+      expect(resp.isSuccess, isFalse);
+      expect(resp.code, ApiCode.unauthorized);
+    });
   });
 
   group('mapError', () {

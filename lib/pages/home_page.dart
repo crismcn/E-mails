@@ -2,11 +2,12 @@ import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
 
 import '../api/api_scope.dart';
-import '../core/network/api_exception.dart';
+import '../core/auth/health_service.dart';
 import '../l10n/app_localizations.dart';
 import '../models/account.dart';
 import '../theme/app_page_route.dart';
 import '../theme/app_palette.dart';
+import '../theme/app_scroll_behavior.dart';
 import '../widgets/account_tile.dart';
 import '../widgets/app_refresh.dart';
 import '../widgets/stat_card.dart';
@@ -67,8 +68,7 @@ class _HomePageState extends State<HomePage>
 
   int get _validCount =>
       _items.where((a) => a.status == AccountStatus.valid).length;
-  int get _errorCount =>
-      _items.where((a) => a.status != AccountStatus.valid).length;
+  int get _errorCount => _items.where((a) => a.status.isError).length;
 
   List<Account> get _filtered {
     if (!_isSearching) return _items;
@@ -86,30 +86,35 @@ class _HomePageState extends State<HomePage>
     }
   }
 
-  /// 从安全存储载入已导入的账号邮箱，转成展示用 [Account]。
+  /// 从安全存储载入已导入的账号，转成展示用 [Account]。
   ///
-  /// 状态/未读数暂无来源（健康检查与 Graph 拉取为后续任务），
-  /// 载入的账号一律先按「有效 / Graph / 未读未知」占位展示。
+  /// 状态取**落盘值**（导入时为「未知」，健康检测后为「有效 / Token 过期」），
+  /// 因此下拉刷新不会把检测结果冲掉。未读数暂无来源（Graph 拉取为后续任务）。
   Future<void> _load() async {
-    final emails = await ApiScope.of(context).knownAccounts();
+    final records = await ApiScope.of(context).knownAccountRecords();
     if (!mounted) return;
-    emails.sort();
+    records.sort((a, b) => a.email.compareTo(b.email));
     setState(() {
       _items
         ..clear()
         ..addAll(
-          emails.map(
-            (email) => Account(
-              email: email,
-              status: AccountStatus.valid,
+          records.map(
+            (r) => Account(
+              email: r.email,
+              status: _statusFromName(r.status),
               protocol: MailProtocol.graph,
               unread: null,
+              displayName: r.displayName,
             ),
           ),
         );
       _lastUpdated = DateTime.now();
     });
   }
+
+  /// 落盘的状态字符串（`AccountStatus.name`）→ 枚举；未知/无法识别一律 unknown。
+  AccountStatus _statusFromName(String name) =>
+      AccountStatus.values.asNameMap()[name] ?? AccountStatus.unknown;
 
   Future<void> _onRefresh() async {
     await _load();
@@ -168,8 +173,8 @@ class _HomePageState extends State<HomePage>
 
   // ---- 批量操作 ----
 
-  /// 批量健康检测 —— 逐账号强制刷新一次 token：成功记为有效，
-  /// 鉴权失败记为 Token 过期，其它错误（网络等）暂不改状态。
+  /// 批量健康检测 —— 每个账号两步验证（刷 token + `GET /me`，见 [HealthService]）：
+  /// 通过记为有效，凭据失效记为 Token 过期，网络类错误不改判状态。
   Future<void> _healthCheckSelected() async {
     if (_checking || _selected.isEmpty) return;
     final api = ApiScope.of(context);
@@ -179,29 +184,31 @@ class _HomePageState extends State<HomePage>
     setState(() => _checking = true);
     _toast(l10n.accountChecking);
 
+    final reports = await api.health.checkAll(emails);
+
     var ok = 0;
     var bad = 0;
-    final results = <String, AccountStatus>{};
-    await Future.wait(
-      emails.map((email) async {
-        try {
-          await api.tokenService.accessTokenFor(email, forceRefresh: true);
-          results[email] = AccountStatus.valid;
-          ok++;
-        } on ApiException catch (e) {
-          bad++;
-          if (e.isAuthFailure) results[email] = AccountStatus.tokenExpired;
-        } catch (_) {
-          bad++;
-        }
-      }),
-    );
+    for (final r in reports) {
+      r.isOk ? ok++ : bad++;
+    }
+    final byEmail = {for (final r in reports) r.email: r};
 
     if (!mounted) return;
     setState(() {
       for (var i = 0; i < _items.length; i++) {
-        final status = results[_items[i].email];
-        if (status != null) _items[i] = _items[i].copyWith(status: status);
+        final r = byEmail[_items[i].email];
+        if (r == null) continue;
+        if (r.isOk) {
+          // 有效：顺带把 /me 拿到的显示名更新到内存（落盘已由服务负责）。
+          _items[i] = _items[i].copyWith(
+            status: AccountStatus.valid,
+            displayName:
+                (r.displayName?.isNotEmpty ?? false) ? r.displayName : null,
+          );
+        } else if (r.isCredentialsInvalid) {
+          // 仅凭据失效才改判；网络/服务端问题保留原状态，避免误标。
+          _items[i] = _items[i].copyWith(status: AccountStatus.tokenExpired);
+        }
       }
       _checking = false;
       _selectionMode = false;
@@ -280,6 +287,10 @@ class _HomePageState extends State<HomePage>
                       fit: StackFit.expand,
                       children: [
                         EasyRefresh(
+                          // EasyRefresh 会用自己的物理覆盖 MaterialApp.scrollBehavior，
+                          // 故在此显式传入同一套「小幅+迅速」回弹参数（触顶/触底一致）。
+                          spring: kSnappySpring,
+                          frictionFactor: snappyFrictionFactor,
                           // 吸顶头部会盖住浮于内容之上的指示器，故改用 locator 定位到吸顶区下方。
                           header: appRefreshHeader(
                             _lastUpdated,

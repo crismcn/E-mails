@@ -170,6 +170,36 @@ abstract class AppLocalizations {
   /// **'已标记为未读'**
   String get mailMarkedUnread;
 
+  /// No description provided for @mailActionFailedToast.
+  ///
+  /// In zh, this message translates to:
+  /// **'操作失败：{message}'**
+  String mailActionFailedToast(String message);
+
+  /// No description provided for @mailEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无邮件'**
+  String get mailEmpty;
+
+  /// No description provided for @mailLoadFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'邮件加载失败'**
+  String get mailLoadFailed;
+
+  /// No description provided for @mailLoadFailedToast.
+  ///
+  /// In zh, this message translates to:
+  /// **'加载失败：{message}'**
+  String mailLoadFailedToast(String message);
+
+  /// No description provided for @commonRetry.
+  ///
+  /// In zh, this message translates to:
+  /// **'重试'**
+  String get commonRetry;
+
   /// No description provided for @loadMoreLoading.
   ///
   /// In zh, this message translates to:
@@ -289,6 +319,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'密码错误'**
   String get statusPasswordError;
+
+  /// No description provided for @statusUnknown.
+  ///
+  /// In zh, this message translates to:
+  /// **'未知'**
+  String get statusUnknown;
 
   /// No description provided for @settingsTitle.
   ///

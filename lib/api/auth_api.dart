@@ -46,10 +46,14 @@ class AuthApi {
   ///
   /// 请求体为 form-urlencoded；dio 已按 [DioClientFactory.buildAuthDio] 配置
   /// 默认 form 编码，此处传 Map 即可。
+  ///
+  /// [clientSecret] 仅「机密客户端」需要（导入的账号数据里没有，故通常为 null）；
+  /// 非空时才附带，与公共客户端流程保持一致。
   Future<ApiResponse<TokenResult>> refreshToken({
     required String clientId,
     required String refreshToken,
     String scope = ApiConfig.defaultScope,
+    String? clientSecret,
   }) {
     return _client.post<TokenResult>(
       ApiConfig.oauthTokenPath,
@@ -58,6 +62,8 @@ class AuthApi {
         'grant_type': 'refresh_token',
         'refresh_token': refreshToken,
         'scope': scope,
+        if (clientSecret != null && clientSecret.isNotEmpty)
+          'client_secret': clientSecret,
       },
       parser: (json) => TokenResult.fromJson(json as Map<String, dynamic>),
     );
