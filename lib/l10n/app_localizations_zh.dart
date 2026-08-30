@@ -48,6 +48,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mailMarkedUnread => '已标记为未读';
 
   @override
+  String get mailFlagged => '已标星';
+
+  @override
+  String get mailUnflagged => '已取消标星';
+
+  @override
   String mailActionFailedToast(String message) {
     return '操作失败：$message';
   }
@@ -65,6 +71,70 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get commonRetry => '重试';
+
+  @override
+  String get mailAccountCopied => '已复制邮箱号';
+
+  @override
+  String get folderInbox => '收件箱';
+
+  @override
+  String get folderUnread => '未读邮件';
+
+  @override
+  String get folderFlagged => '已标星';
+
+  @override
+  String get folderSent => '已发送';
+
+  @override
+  String get composeTitle => '新建邮件';
+
+  @override
+  String get composeTo => '收件人：';
+
+  @override
+  String get composeCcFrom => '抄送/密送, 发件人：';
+
+  @override
+  String get composeImportance => '重要性：';
+
+  @override
+  String get composeImportanceHigh => '高';
+
+  @override
+  String get composeImportanceNormal => '正常';
+
+  @override
+  String get composeImportanceLow => '低';
+
+  @override
+  String get composeSubject => '主　题：';
+
+  @override
+  String get composeBodyHint => '正文';
+
+  @override
+  String get composeSending => '发送中…';
+
+  @override
+  String get composeSent => '已发送';
+
+  @override
+  String composeSendFailed(String message) {
+    return '发送失败：$message';
+  }
+
+  @override
+  String get composeNoRecipient => '请先填写收件人';
+
+  @override
+  String composeInvalidRecipient(String value) {
+    return '收件人邮箱格式有误：$value';
+  }
+
+  @override
+  String get composeAttachTodo => '附件功能待接入';
 
   @override
   String get loadMoreLoading => '加载中...';

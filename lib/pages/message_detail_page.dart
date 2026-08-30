@@ -33,7 +33,10 @@ class MessageDetailPage extends StatefulWidget {
 }
 
 class _MessageDetailPageState extends State<MessageDetailPage> {
-  bool _starred = false;
+  late bool _starred = widget.message.isFlagged;
+
+  /// 标星写回进行中 —— 去重，避免连点发出多次 PATCH。
+  bool _flagBusy = false;
 
   /// 当前展示的消息（懒取全文后会被替换为带 body/htmlBody 的版本）。
   late MailMessage _message = widget.message;
@@ -67,9 +70,54 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
         // 用取回的全文整体重建 —— 列表项只带发件人/主题占位，收件人、完整日期、
         // 正文都以权威的 getMessage 结果为准。
         _message = applyBody(mailMessageFromGraph(res.data!), res.data!);
+        // 星标以权威结果为准（列表项未带 flag，进入时可能是占位 false）。
+        _starred = _message.isFlagged;
       }
       _loadingBody = false;
     });
+  }
+
+  /// 切换标星 —— 乐观更新 + PATCH 回写 Graph，失败回滚并提示。
+  Future<void> _toggleStar() async {
+    if (_flagBusy || _message.id.isEmpty) return;
+    final next = !_starred;
+    setState(() {
+      _starred = next;
+      _flagBusy = true;
+    });
+    final res = await ApiScope.of(
+      context,
+    ).mail.updateFlag(widget.accountEmail, _message.id, flagged: next);
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context);
+    if (res.isSuccess) {
+      _message = _message.copyWith(isFlagged: next);
+      setState(() => _flagBusy = false);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(next ? l10n.mailFlagged : l10n.mailUnflagged),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(milliseconds: 1400),
+          ),
+        );
+    } else {
+      // 回滚本地星标态，并原样提示失败原因（多为 Mail.ReadWrite 未授权）。
+      setState(() {
+        _starred = !next;
+        _flagBusy = false;
+      });
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(l10n.mailActionFailedToast(res.message)),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(milliseconds: 1800),
+          ),
+        );
+    }
   }
 
   /// 打开正文中的链接（超链接 / 按钮）—— 外部浏览器，失败时提示。
@@ -107,7 +155,7 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
             _Header(
               title: message.sender,
               starred: _starred,
-              onStar: () => setState(() => _starred = !_starred),
+              onStar: _toggleStar,
             ),
             Expanded(
               child: SingleChildScrollView(

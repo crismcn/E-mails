@@ -1,6 +1,7 @@
 import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 
 import '../api/api_scope.dart';
@@ -13,6 +14,7 @@ import '../theme/app_palette.dart';
 import '../theme/app_scroll_behavior.dart';
 import '../widgets/app_refresh.dart';
 import '../widgets/mail_tile.dart';
+import 'compose_page.dart';
 import 'message_detail_page.dart';
 
 /// 邮件列表页 —— 从首页某个邮箱账号进入，拉取该账号在 Microsoft Graph 上的邮件。
@@ -30,12 +32,19 @@ class MailListPage extends StatefulWidget {
   State<MailListPage> createState() => _MailListPageState();
 }
 
-class _MailListPageState extends State<MailListPage> {
+class _MailListPageState extends State<MailListPage>
+    with SingleTickerProviderStateMixin {
   /// 每页条数（Graph `$top`）。
   static const int _pageSize = 20;
 
   final List<MailPreview> _items = <MailPreview>[];
   String _query = '';
+
+  /// 当前视图（收件箱 / 未读 / 已标星 / 已发送），由顶部抽屉切换。
+  MailFolder _folder = MailFolder.inbox;
+
+  /// 抽屉展开动画 —— 驱动菜单下拉 + 遮罩淡入、标题三角翻转。
+  late final AnimationController _drawerCtrl;
 
   /// 首帧依赖就绪后只自动拉一次。
   bool _loaded = false;
@@ -52,7 +61,44 @@ class _MailListPageState extends State<MailListPage> {
   /// 上次刷新完成时间（下拉刷新头显示）。
   DateTime _lastUpdated = DateTime.now();
 
+  /// 已加载邮件里的未读数 —— **兜底**计数：服务端计数拿不到时才用它
+  /// （受限于已拉取的页，非真实总数）。
+  int get _unreadCount => _items.where((m) => m.unread > 0).length;
+
+  /// 当前视图的服务端计数（`mailFolders` 的未读 / 总数）。
+  ///
+  /// 为 null 表示拿不到：已标星无对应文件夹，或请求失败（如无权限）——
+  /// 此时徽标退回 [_unreadCount]。
+  MailFolderStats? _stats;
+
+  /// 收件箱的服务端未读数 —— 抽屉「收件箱 / 未读邮件」两行恒用它。
+  ///
+  /// 首屏就是收件箱，所以切到已发送 / 已标星后它仍保留最近一次的收件箱真实值，
+  /// 不会因为当前视图换了而把抽屉里的数字写错。
+  int? _inboxUnread;
+
+  /// 顶部徽标：当前视图的服务端未读数，拿不到才退回本地已加载未读数。
+  int get _headerUnread => _stats?.unread ?? _unreadCount;
+
+  /// 抽屉里「收件箱 / 未读邮件」的数字：收件箱服务端未读数，拿不到才退回本地。
+  int get _drawerUnread => _inboxUnread ?? _unreadCount;
+
   MailApi get _mailApi => ApiScope.of(context).mail;
+
+  @override
+  void initState() {
+    super.initState();
+    _drawerCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 220),
+    );
+  }
+
+  @override
+  void dispose() {
+    _drawerCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   void didChangeDependencies() {
@@ -61,6 +107,27 @@ class _MailListPageState extends State<MailListPage> {
       _loaded = true;
       _reload();
     }
+  }
+
+  void _toggleDrawer() {
+    _drawerCtrl.isDismissed ? _drawerCtrl.forward() : _drawerCtrl.reverse();
+  }
+
+  void _closeDrawer() => _drawerCtrl.reverse();
+
+  /// 切换文件夹 —— 关抽屉、清空列表、回到首屏加载态并重新拉取。
+  void _selectFolder(MailFolder folder) {
+    _closeDrawer();
+    if (folder == _folder) return;
+    setState(() {
+      _folder = folder;
+      _items.clear();
+      _firstLoading = true;
+      _error = null;
+      _hasMore = true;
+      _query = '';
+    });
+    _reload();
   }
 
   List<MailPreview> get _filtered {
@@ -80,10 +147,14 @@ class _MailListPageState extends State<MailListPage> {
   /// 失败时的取舍：**已有数据就不清空**，只 toast 提示，避免刷新失败把已读到的
   /// 邮件抹掉；列表本来就空才整页展示错误 + 重试。
   Future<void> _reload() async {
+    // 服务端计数与列表并行拉取 —— 计数失败只让徽标退回本地值，不影响列表。
+    final statsFuture = _loadStats();
     final response = await _mailApi.listMessages(
       widget.accountEmail,
       top: _pageSize,
+      folder: _folder,
     );
+    await statsFuture;
     if (!mounted) return;
     final page = response.data;
     if (response.isSuccess && page != null) {
@@ -103,9 +174,50 @@ class _MailListPageState extends State<MailListPage> {
       _error = response.message;
     });
     if (_items.isNotEmpty) {
-      _toast(AppLocalizations.of(context).mailLoadFailedToast(response.message));
+      _toast(
+        AppLocalizations.of(context).mailLoadFailedToast(response.message),
+      );
     }
   }
+
+  /// 拉当前视图的服务端计数 —— 失败**静默**（徽标自动退回本地已加载未读数）。
+  ///
+  /// 已标星没有对应文件夹（`statsFolderId == null`），直接置空不发请求。
+  Future<void> _loadStats() async {
+    final folderId = _folder.statsFolderId;
+    if (folderId == null) {
+      if (mounted) setState(() => _stats = null);
+      return;
+    }
+    final res = await _mailApi.getFolderStats(widget.accountEmail, folderId);
+    if (!mounted) return;
+    final stats = res.isSuccess ? res.data : null;
+    setState(() {
+      _stats = stats;
+      // 收件箱视图（含「未读邮件」过滤视图）的计数同时喂给抽屉。
+      final isInbox =
+          _folder == MailFolder.inbox || _folder == MailFolder.unread;
+      if (stats != null && isInbox) _inboxUnread = stats.unread;
+    });
+  }
+
+  /// 未读计数的乐观增减 —— 本地标已读/未读后同步调整服务端计数副本，
+  /// 让徽标立刻跟着动;下次刷新会以服务端值校准。
+  ///
+  /// 只在**调用方的 setState 内**使用（自身不触发重建）。
+  void _bumpUnread(int delta) {
+    final stats = _stats;
+    if (stats != null) {
+      _stats = MailFolderStats(
+        unread: _atLeastZero(stats.unread + delta),
+        total: stats.total,
+      );
+    }
+    final inbox = _inboxUnread;
+    if (inbox != null) _inboxUnread = _atLeastZero(inbox + delta);
+  }
+
+  static int _atLeastZero(int value) => value < 0 ? 0 : value;
 
   /// 上滑加载更多 —— 以已加载条数作 `$skip` 续拉下一页。
   Future<IndicatorResult> _onLoad() async {
@@ -114,18 +226,21 @@ class _MailListPageState extends State<MailListPage> {
       widget.accountEmail,
       top: _pageSize,
       skip: _items.length,
+      folder: _folder,
     );
     if (!mounted) return IndicatorResult.fail;
     final page = response.data;
     if (!response.isSuccess || page == null) {
-      _toast(AppLocalizations.of(context).mailLoadFailedToast(response.message));
+      _toast(
+        AppLocalizations.of(context).mailLoadFailedToast(response.message),
+      );
       return IndicatorResult.fail;
     }
     // `$skip` 翻页期间若有新邮件到达，会把上一页的末几条挤到下一页 → 按 id 去重。
     final known = _items.map((m) => m.id).toSet();
-    final fresh = mailPreviewsFromGraph(
-      page.items,
-    ).where((m) => m.id.isEmpty || known.add(m.id)).toList();
+    final fresh = mailPreviewsFromGraph(page.items)
+        .where((m) => m.id.isEmpty || known.add(m.id))
+        .toList();
     setState(() {
       _items.addAll(fresh);
       _hasMore = page.items.length >= _pageSize;
@@ -156,7 +271,10 @@ class _MailListPageState extends State<MailListPage> {
     final markRead = mail.unread > 0;
 
     // 乐观更新：先切本地状态与提示，让操作即时可见。
-    setState(() => _items[index] = mail.copyWith(unread: markRead ? 0 : 1));
+    setState(() {
+      _items[index] = mail.copyWith(unread: markRead ? 0 : 1);
+      _bumpUnread(markRead ? -1 : 1);
+    });
     _toast(markRead ? l10n.mailMarkedRead : l10n.mailMarkedUnread);
 
     final res = await _mailApi.updateRead(
@@ -169,7 +287,10 @@ class _MailListPageState extends State<MailListPage> {
     // 失败回滚 —— 按 id 定位（期间列表可能已变动），恢复原未读值。
     final at = _items.indexWhere((m) => m.id == mail.id);
     if (at >= 0) {
-      setState(() => _items[at] = _items[at].copyWith(unread: mail.unread));
+      setState(() {
+        _items[at] = _items[at].copyWith(unread: mail.unread);
+        _bumpUnread(markRead ? 1 : -1);
+      });
     }
     _toast(l10n.mailActionFailedToast(res.message));
   }
@@ -184,7 +305,10 @@ class _MailListPageState extends State<MailListPage> {
     final index = _items.indexWhere((m) => m.id == mail.id);
     if (index < 0) return;
 
-    setState(() => _items[index] = _items[index].copyWith(unread: 0));
+    setState(() {
+      _items[index] = _items[index].copyWith(unread: 0);
+      _bumpUnread(-1);
+    });
 
     final res = await _mailApi.updateRead(
       widget.accountEmail,
@@ -195,7 +319,10 @@ class _MailListPageState extends State<MailListPage> {
 
     final at = _items.indexWhere((m) => m.id == mail.id);
     if (at >= 0) {
-      setState(() => _items[at] = _items[at].copyWith(unread: mail.unread));
+      setState(() {
+        _items[at] = _items[at].copyWith(unread: mail.unread);
+        _bumpUnread(1);
+      });
     }
   }
 
@@ -218,33 +345,90 @@ class _MailListPageState extends State<MailListPage> {
       );
   }
 
+  /// 复制账号邮箱到剪贴板（点击顶部标题触发）。
+  Future<void> _copyEmail() async {
+    await Clipboard.setData(ClipboardData(text: widget.accountEmail));
+    if (!mounted) return;
+    _toast(AppLocalizations.of(context).mailAccountCopied);
+  }
+
+  /// 打开新建邮件页 —— 以当前账号为发件人。
+  void _openCompose() {
+    Navigator.of(context).push(
+      appRoute<void>((_) => ComposePage(accountEmail: widget.accountEmail)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       backgroundColor: palette.background,
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {},
-        backgroundColor: palette.primary,
-        foregroundColor: Colors.white,
-        elevation: 4,
-        child: const Icon(Icons.add, size: 28),
+      // 小号圆形添加按钮 —— 点击进入新建邮件页。
+      floatingActionButton: SizedBox(
+        width: 48,
+        height: 48,
+        child: FloatingActionButton(
+          onPressed: _openCompose,
+          backgroundColor: palette.primary,
+          foregroundColor: Colors.white,
+          elevation: 4,
+          shape: const CircleBorder(),
+          child: const Icon(Icons.add, size: 24),
+        ),
       ),
       body: SafeArea(
         bottom: false,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _Header(title: widget.accountEmail),
-            const SizedBox(height: 8),
-            _SearchBox(onChanged: (v) => setState(() => _query = v)),
-            const SizedBox(height: 8),
-            Expanded(child: _buildBody()),
+            _Header(
+              folderLabel: _folderLabel(l10n, _folder),
+              email: widget.accountEmail,
+              unread: _headerUnread,
+              drawerAnim: _drawerCtrl,
+              onToggleDrawer: _toggleDrawer,
+              onCopy: _copyEmail,
+            ),
+            // 抽屉与遮罩浮在搜索框 + 列表之上（不遮标题，标题仍可点击收起）。
+            Expanded(
+              child: Stack(
+                children: [
+                  Column(
+                    children: [
+                      const SizedBox(height: 8),
+                      _SearchBox(onChanged: (v) => setState(() => _query = v)),
+                      const SizedBox(height: 8),
+                      Expanded(child: _buildBody()),
+                    ],
+                  ),
+                  _FolderDrawer(
+                    anim: _drawerCtrl,
+                    current: _folder,
+                    unread: _drawerUnread,
+                    flaggedCount: _folder == MailFolder.flagged
+                        ? _items.length
+                        : null,
+                    onSelect: _selectFolder,
+                    onClose: _closeDrawer,
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
     );
   }
+
+  String _folderLabel(AppLocalizations l10n, MailFolder folder) =>
+      switch (folder) {
+        MailFolder.inbox => l10n.folderInbox,
+        MailFolder.unread => l10n.folderUnread,
+        MailFolder.flagged => l10n.folderFlagged,
+        MailFolder.sent => l10n.folderSent,
+      };
 
   /// 三态：首屏转圈 / 空列表下的整页错误 / 正常列表（含空态占位）。
   Widget _buildBody() {
@@ -273,38 +457,280 @@ class _MailListPageState extends State<MailListPage> {
   }
 }
 
-/// 顶部标题 —— 左侧返回箭头 + 账号邮箱（加粗大字）。
+/// 顶部标题栏 —— 主行「文件夹名 ▾ 未读徽标」（点击弹抽屉），次行账号邮箱（点击复制）；
+/// 左侧保留返回、右侧写信图标。三角随抽屉展开翻转。
 class _Header extends StatelessWidget {
-  const _Header({required this.title});
+  const _Header({
+    required this.folderLabel,
+    required this.email,
+    required this.unread,
+    required this.drawerAnim,
+    required this.onToggleDrawer,
+    required this.onCopy,
+  });
 
-  final String title;
+  final String folderLabel;
+  final String email;
+  final int unread;
+  final Animation<double> drawerAnim;
+  final VoidCallback onToggleDrawer;
+  final VoidCallback onCopy;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 6, 20, 12),
+      padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           IconButton(
             onPressed: () => Navigator.of(context).maybePop(),
             icon: Icon(Icons.arrow_back, color: palette.textPrimary, size: 20),
             splashRadius: 22,
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 2),
           Expanded(
-            child: Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: palette.textPrimary,
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 主行：文件夹名 + 翻转三角 + 未读徽标，整行点击开合抽屉。
+                InkWell(
+                  onTap: onToggleDrawer,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            folderLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: palette.textPrimary,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        RotationTransition(
+                          turns: Tween<double>(
+                            begin: 0,
+                            end: 0.5,
+                          ).animate(drawerAnim),
+                          child: Icon(
+                            Icons.arrow_drop_down,
+                            color: palette.textPrimary,
+                            size: 26,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        if (unread > 0) _UnreadPill(count: unread),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                GestureDetector(
+                  onTap: onCopy,
+                  behavior: HitTestBehavior.opaque,
+                  child: Text(
+                    email,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: palette.textSecondary,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
+          // 右上角留白：撑起右侧对称间距（返回箭头 44 宽，这里配平避免标题偏移）。
+          const SizedBox(width: 8),
         ],
+      ),
+    );
+  }
+}
+
+/// 蓝色未读数胶囊徽标。
+class _UnreadPill extends StatelessWidget {
+  const _UnreadPill({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: palette.primary,
+        borderRadius: BorderRadius.circular(100),
+      ),
+      child: Text(
+        '$count',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+/// 顶部下拉抽屉 —— 满宽菜单（收件箱 / 未读 / 已标星 / 已发送 / 全部文件夹）。
+///
+/// 由 [anim] 驱动：紧贴标题栏下沿、自顶向下切入展开（无遮罩）。[anim] 归零时
+/// 整体不入树，避免挡住下方列表交互。关闭靠再点标题或选择某项。
+class _FolderDrawer extends StatelessWidget {
+  const _FolderDrawer({
+    required this.anim,
+    required this.current,
+    required this.unread,
+    required this.flaggedCount,
+    required this.onSelect,
+    required this.onClose,
+  });
+
+  final Animation<double> anim;
+  final MailFolder current;
+  final int unread;
+  final int? flaggedCount;
+  final ValueChanged<MailFolder> onSelect;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final l10n = AppLocalizations.of(context);
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: AnimatedBuilder(
+        animation: anim,
+        builder: (context, child) {
+          if (anim.isDismissed) return const SizedBox.shrink();
+          // 展开到位后不再裁剪，让底部圆角阴影完整投出；
+          // 动画过程中按曲线裁剪高度，实现自顶向下切入。
+          if (anim.isCompleted) return child!;
+          return ClipRect(
+            child: Align(
+              alignment: Alignment.topCenter,
+              heightFactor: Curves.easeOutCubic.transform(anim.value),
+              child: child,
+            ),
+          );
+        },
+        child: Material(
+          color: palette.background,
+          surfaceTintColor: Colors.transparent,
+          elevation: 12,
+          borderRadius: const BorderRadius.vertical(
+            bottom: Radius.circular(20),
+          ),
+          shadowColor: Colors.black.withValues(alpha: 0.28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _FolderRow(
+                icon: Icons.inbox_outlined,
+                label: l10n.folderInbox,
+                trailing: unread > 0 ? '$unread' : null,
+                selected: current == MailFolder.inbox,
+                onTap: () => onSelect(MailFolder.inbox),
+              ),
+              _rowDivider(palette),
+              _FolderRow(
+                icon: Icons.mark_email_unread_outlined,
+                label: l10n.folderUnread,
+                trailing: unread > 0 ? '$unread' : null,
+                selected: current == MailFolder.unread,
+                onTap: () => onSelect(MailFolder.unread),
+              ),
+              _rowDivider(palette),
+              _FolderRow(
+                icon: Icons.star_outline,
+                label: l10n.folderFlagged,
+                trailing: flaggedCount != null ? '$flaggedCount' : null,
+                selected: current == MailFolder.flagged,
+                onTap: () => onSelect(MailFolder.flagged),
+              ),
+              _rowDivider(palette),
+              _FolderRow(
+                icon: Icons.send_outlined,
+                label: l10n.folderSent,
+                selected: current == MailFolder.sent,
+                onTap: () => onSelect(MailFolder.sent),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _rowDivider(AppPalette palette) => Divider(
+    color: palette.divider,
+    height: 1,
+    thickness: 1,
+    indent: 60,
+    endIndent: 20,
+  );
+}
+
+/// 抽屉里的单个文件夹行 —— 前置图标 + 名称 + 尾部计数 / 展开箭头。
+class _FolderRow extends StatelessWidget {
+  const _FolderRow({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.trailing,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final String? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final color = selected ? palette.primary : palette.textPrimary;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 24),
+            const SizedBox(width: 18),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 17,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                ),
+              ),
+            ),
+            if (trailing != null)
+              Text(
+                trailing!,
+                style: TextStyle(color: palette.textSecondary, fontSize: 15),
+              ),
+          ],
+        ),
       ),
     );
   }

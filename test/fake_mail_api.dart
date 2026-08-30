@@ -14,6 +14,7 @@ class FakeMailApi extends MailApi {
     List<GraphMessage>? messages,
     Map<String, List<GraphMessage>>? conversations,
     Map<String, GraphMessage>? fullMessages,
+    this.folderStats,
     this.failure,
   }) : messages = messages ?? kFakeGraphMessages,
        conversations = conversations ?? kFakeConversations,
@@ -35,8 +36,27 @@ class FakeMailApi extends MailApi {
   /// updateRead 是否失败（模拟只有 Mail.Read 权限的账号写回被拒）。
   bool updateReadFails = false;
 
+  /// sendMail 是否失败（模拟未授权 Mail.Send 的账号发信被拒）。
+  bool sendMailFails = false;
+
+  /// updateFlag 是否失败（模拟只有 Mail.Read 权限的账号写回被拒）。
+  bool updateFlagFails = false;
+
+  /// getFolderStats 是否失败（模拟取不到服务端计数 → 徽标退回本地计数）。
+  bool folderStatsFails = false;
+
+  /// 服务端计数假值：folderId（`inbox` / `sentitems`）→ 计数。
+  /// 未给出的文件夹按内存数据现算（与本地计数一致）。
+  final Map<String, MailFolderStats>? folderStats;
+
+  /// 记录 getFolderStats 请求过的 folderId，用于断言取的是哪个文件夹。
+  final List<String> statsFolders = <String>[];
+
   /// 记录每次列表请求的 `$skip`，用于断言翻页参数。
   final List<int> skips = <int>[];
+
+  /// 记录每次列表请求的文件夹，用于断言抽屉切换。
+  final List<MailFolder> folders = <MailFolder>[];
 
   /// 记录 getMessage 请求过的 id。
   final List<String> fetchedIds = <String>[];
@@ -44,19 +64,64 @@ class FakeMailApi extends MailApi {
   /// 记录 updateRead 调用：`(id, isRead)`。
   final List<(String, bool)> readUpdates = <(String, bool)>[];
 
+  /// 记录 updateFlag 调用：`(id, flagged)`。
+  final List<(String, bool)> flagUpdates = <(String, bool)>[];
+
+  /// 记录 sendMail 调用参数，供断言发信内容。
+  final List<
+    ({
+      String email,
+      List<String> to,
+      String subject,
+      String body,
+      bool isHtml,
+      String importance,
+    })
+  >
+  sentMails = [];
+
   int get calls => skips.length;
+
+  @override
+  Future<ApiResponse<MailFolderStats>> getFolderStats(
+    String email,
+    String folderId,
+  ) async {
+    statsFolders.add(folderId);
+    if (folderStatsFails) {
+      return const ApiResponse<MailFolderStats>.failure(
+        403,
+        'AADSTS70000: 无权限',
+      );
+    }
+    final preset = folderStats?[folderId];
+    if (preset != null) return ApiResponse<MailFolderStats>.success(preset);
+    // 未预置：按内存数据现算，与本地兜底计数一致。
+    return ApiResponse<MailFolderStats>.success(
+      MailFolderStats(
+        unread: messages.where((m) => !m.isRead).length,
+        total: messages.length,
+      ),
+    );
+  }
 
   @override
   Future<ApiResponse<GraphMessagePage>> listMessages(
     String email, {
     int top = 20,
     int skip = 0,
+    MailFolder folder = MailFolder.inbox,
   }) async {
     skips.add(skip);
+    folders.add(folder);
     final failed = failure;
     if (failed != null) return failed;
+    // 未读视图按 isRead 过滤，其余文件夹直接返回内存数据切片。
+    final source = folder == MailFolder.unread
+        ? messages.where((m) => !m.isRead).toList()
+        : messages;
     return ApiResponse<GraphMessagePage>.success(
-      GraphMessagePage(items: messages.skip(skip).take(top).toList()),
+      GraphMessagePage(items: source.skip(skip).take(top).toList()),
     );
   }
 
@@ -106,6 +171,44 @@ class FakeMailApi extends MailApi {
       fakeGraphMessage(id: id, isRead: isRead),
     );
   }
+
+  @override
+  Future<ApiResponse<GraphMessage>> updateFlag(
+    String email,
+    String id, {
+    required bool flagged,
+  }) async {
+    flagUpdates.add((id, flagged));
+    if (updateFlagFails) {
+      return const ApiResponse<GraphMessage>.failure(403, 'AADSTS70000: 无写权限');
+    }
+    return ApiResponse<GraphMessage>.success(
+      fakeGraphMessage(id: id, isFlagged: flagged),
+    );
+  }
+
+  @override
+  Future<ApiResponse<bool>> sendMail(
+    String email, {
+    required List<String> to,
+    required String subject,
+    required String body,
+    bool isHtml = false,
+    String importance = 'normal',
+  }) async {
+    sentMails.add((
+      email: email,
+      to: to,
+      subject: subject,
+      body: body,
+      isHtml: isHtml,
+      importance: importance,
+    ));
+    if (sendMailFails) {
+      return const ApiResponse<bool>.failure(403, 'AADSTS70000: 无发信权限');
+    }
+    return const ApiResponse<bool>.success(true);
+  }
 }
 
 /// 造一封 Graph 消息 —— 只填测试关心的字段。
@@ -121,6 +224,7 @@ GraphMessage fakeGraphMessage({
   List<String> toRecipients = const <String>[],
   String? bodyContent,
   bool bodyIsHtml = false,
+  bool isFlagged = false,
 }) {
   return GraphMessage(
     id: id,
@@ -134,6 +238,7 @@ GraphMessage fakeGraphMessage({
     toRecipients: toRecipients,
     bodyContent: bodyContent,
     bodyIsHtml: bodyIsHtml,
+    isFlagged: isFlagged,
   );
 }
 
@@ -209,6 +314,8 @@ final Map<String, GraphMessage> kFakeFullMessages = {
     receivedDateTime: '2026-08-25T09:38:00Z',
     bodyContent: '这是 Claude 通知的纯文本正文，仅用于验证纯文本渲染。',
     bodyIsHtml: false,
+    // 已在服务端标星 —— 供详情页验证「进入即回填星标态」。
+    isFlagged: true,
   ),
   'c3-1': fakeGraphMessage(
     id: 'c3-1',

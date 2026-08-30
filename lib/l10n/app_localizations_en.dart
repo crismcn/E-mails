@@ -48,6 +48,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get mailMarkedUnread => 'Marked as unread';
 
   @override
+  String get mailFlagged => 'Flagged';
+
+  @override
+  String get mailUnflagged => 'Unflagged';
+
+  @override
   String mailActionFailedToast(String message) {
     return 'Action failed: $message';
   }
@@ -65,6 +71,70 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get commonRetry => 'Retry';
+
+  @override
+  String get mailAccountCopied => 'Email address copied';
+
+  @override
+  String get folderInbox => 'Inbox';
+
+  @override
+  String get folderUnread => 'Unread';
+
+  @override
+  String get folderFlagged => 'Flagged';
+
+  @override
+  String get folderSent => 'Sent';
+
+  @override
+  String get composeTitle => 'New Message';
+
+  @override
+  String get composeTo => 'To:';
+
+  @override
+  String get composeCcFrom => 'Cc/Bcc, From:';
+
+  @override
+  String get composeImportance => 'Importance:';
+
+  @override
+  String get composeImportanceHigh => 'High';
+
+  @override
+  String get composeImportanceNormal => 'Normal';
+
+  @override
+  String get composeImportanceLow => 'Low';
+
+  @override
+  String get composeSubject => 'Subject:';
+
+  @override
+  String get composeBodyHint => 'Body';
+
+  @override
+  String get composeSending => 'Sending…';
+
+  @override
+  String get composeSent => 'Sent';
+
+  @override
+  String composeSendFailed(String message) {
+    return 'Send failed: $message';
+  }
+
+  @override
+  String get composeNoRecipient => 'Please add a recipient first';
+
+  @override
+  String composeInvalidRecipient(String value) {
+    return 'Invalid recipient email: $value';
+  }
+
+  @override
+  String get composeAttachTodo => 'Attachments aren\'t supported yet';
 
   @override
   String get loadMoreLoading => 'Loading...';

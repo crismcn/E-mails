@@ -70,6 +70,7 @@ class MailMessage {
     this.subject = '',
     this.fullDate = '',
     this.htmlBody,
+    this.isFlagged = false,
   });
 
   /// 发件人显示名。
@@ -99,6 +100,9 @@ class MailMessage {
   /// 富文本 HTML 正文；为 null 时详情页用 [body] 走纯文本渲染。
   final String? htmlBody;
 
+  /// 是否已标星（Graph `flag.flagStatus == 'flagged'`）—— 详情页星标初始态。
+  final bool isFlagged;
+
   /// 复制并覆盖部分字段 —— 主要用于懒取全文后并入 body / htmlBody。
   MailMessage copyWith({
     String? sender,
@@ -110,6 +114,7 @@ class MailMessage {
     String? subject,
     String? fullDate,
     String? htmlBody,
+    bool? isFlagged,
   }) {
     return MailMessage(
       sender: sender ?? this.sender,
@@ -121,6 +126,7 @@ class MailMessage {
       subject: subject ?? this.subject,
       fullDate: fullDate ?? this.fullDate,
       htmlBody: htmlBody ?? this.htmlBody,
+      isFlagged: isFlagged ?? this.isFlagged,
     );
   }
 }

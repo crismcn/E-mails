@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -106,7 +107,11 @@ void main() {
     await _pumpMailList(tester, api);
     expect(api.skips, [0]);
 
-    await tester.fling(find.byType(Scrollable).last, const Offset(0, -600), 1500);
+    await tester.fling(
+      find.byType(Scrollable).last,
+      const Offset(0, -600),
+      1500,
+    );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 900));
     await tester.pumpAndSettle();
@@ -138,8 +143,8 @@ void main() {
     // 回写记录到 Graph：m1 → isRead true。
     expect(api.readUpdates, [('m1', true)]);
     expect(find.text('已标记为已读'), findsOneWidget);
-    // Claude 变已读 → 未读角标只剩 1 个（蓝湖）。
-    expect(find.text('1'), findsOneWidget);
+    // Claude 变已读 → 未读只剩 1（蓝湖）：顶部未读徽标「1」+ 蓝湖角标「1」共 2 处。
+    expect(find.text('1'), findsNWidgets(2));
   });
 
   testWidgets('左滑标记已读失败：回滚本地状态并提示', (WidgetTester tester) async {
@@ -170,10 +175,10 @@ void main() {
     // 打开即回写：m1 → isRead true。
     expect(api.readUpdates, [('m1', true)]);
 
-    // 返回列表：Claude 未读角标已清，仅剩蓝湖的「1」。
+    // 返回列表：Claude 未读已清，未读只剩 1（蓝湖）：顶部徽标 + 角标共 2 处「1」。
     await tester.tap(find.byIcon(Icons.arrow_back));
     await tester.pumpAndSettle();
-    expect(find.text('1'), findsOneWidget);
+    expect(find.text('1'), findsNWidgets(2));
   });
 
   testWidgets('点击已读邮件进入详情 → 不重复回写', (WidgetTester tester) async {
@@ -185,5 +190,196 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(api.readUpdates, isEmpty);
+  });
+
+  testWidgets('点击顶部标题复制邮箱号到剪贴板', (WidgetTester tester) async {
+    // 拦截剪贴板平台通道，记录写入内容。
+    final binding = TestWidgetsFlutterBinding.ensureInitialized();
+    String? copied;
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied = (call.arguments as Map)['text'] as String?;
+        }
+        return null;
+      },
+    );
+    addTearDown(() {
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      );
+    });
+
+    await _pumpMailList(tester, FakeMailApi());
+
+    // 顶部标题即账号邮箱（列表项里也有同名文本，取第一个 = 标题）。
+    await tester.tap(find.text('alice@outlook.com').first);
+    await tester.pumpAndSettle();
+
+    expect(copied, 'alice@outlook.com');
+    expect(find.text('已复制邮箱号'), findsOneWidget);
+  });
+
+  testWidgets('顶部展示文件夹名与未读徽标 + 点击弹出抽屉切换未读视图', (WidgetTester tester) async {
+    final api = FakeMailApi();
+    await _pumpMailList(tester, api);
+
+    // 首屏默认收件箱：标题即「收件箱」，未拉过其它文件夹。
+    expect(find.text('收件箱'), findsOneWidget);
+    expect(api.folders, [MailFolder.inbox]);
+    // 未读徽标 = 已加载未读数（假数据 2 封未读）。
+    expect(find.text('2'), findsOneWidget);
+
+    // 点击标题弹出抽屉：菜单项出现（收件箱在标题+抽屉里各一个 = 2）。
+    await tester.tap(find.text('收件箱'));
+    await tester.pumpAndSettle();
+    expect(find.text('收件箱'), findsNWidgets(2));
+    expect(find.text('未读邮件'), findsOneWidget);
+    expect(find.text('已标星'), findsOneWidget);
+    expect(find.text('已发送'), findsOneWidget);
+
+    // 选「未读邮件」：切换文件夹、重新拉取、标题更新、抽屉收起。
+    await tester.tap(find.text('未读邮件'));
+    await tester.pumpAndSettle();
+    expect(api.folders.last, MailFolder.unread);
+    expect(find.text('未读邮件'), findsOneWidget); // 仅标题（抽屉已收起）
+  });
+
+  testWidgets('点击添加按钮进入新建邮件页', (WidgetTester tester) async {
+    await _pumpMailList(tester, FakeMailApi());
+
+    await tester.tap(find.byType(FloatingActionButton));
+    await tester.pumpAndSettle();
+
+    // 新建邮件页核心元素：标题 + 各表单标签 + 发件人回填当前账号。
+    expect(find.text('新建邮件'), findsOneWidget);
+    expect(find.text('收件人：'), findsOneWidget);
+    expect(find.text('主　题：'), findsOneWidget);
+    expect(find.text('alice@outlook.com'), findsOneWidget);
+  });
+
+  testWidgets('新建邮件页：填收件人后发送 → 调 Graph 并返回列表', (WidgetTester tester) async {
+    final api = FakeMailApi();
+    await _pumpMailList(tester, api);
+    await tester.tap(find.byType(FloatingActionButton));
+    await tester.pumpAndSettle();
+
+    // 未填收件人时发送按钮置灰不可点，不会发请求。
+    await tester.tap(find.byIcon(Icons.send_outlined));
+    await tester.pump();
+    expect(api.sentMails, isEmpty);
+
+    // 填收件人 + 主题 + 正文后发送。
+    await tester.enterText(
+      find.byKey(const Key('compose-to-field')),
+      'bob@outlook.com',
+    );
+    await tester.enterText(
+      find.byKey(const Key('compose-subject-field')),
+      '你好',
+    );
+    await tester.enterText(find.byKey(const Key('compose-body-field')), '正文内容');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.send_outlined));
+    await tester.pumpAndSettle();
+
+    // 发信参数正确、纯文本、正常重要性；发送成功后返回列表页。
+    expect(api.sentMails.length, 1);
+    final sent = api.sentMails.first;
+    expect(sent.email, 'alice@outlook.com');
+    expect(sent.to, ['bob@outlook.com']);
+    expect(sent.subject, '你好');
+    expect(sent.body, '正文内容');
+    expect(sent.isHtml, false);
+    expect(sent.importance, 'normal');
+    expect(find.text('已发送'), findsOneWidget);
+    // 已回到列表页（新建邮件标题不在树中）。
+    expect(find.text('新建邮件'), findsNothing);
+  });
+
+  testWidgets('新建邮件页：收件人格式非法则拦截', (WidgetTester tester) async {
+    final api = FakeMailApi();
+    await _pumpMailList(tester, api);
+    await tester.tap(find.byType(FloatingActionButton));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('compose-to-field')),
+      'not-an-email',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.send_outlined));
+    await tester.pump();
+
+    expect(find.textContaining('收件人邮箱格式有误'), findsOneWidget);
+    expect(api.sentMails, isEmpty);
+  });
+
+  testWidgets('新建邮件页：发信失败则留在原页并提示', (WidgetTester tester) async {
+    final api = FakeMailApi()..sendMailFails = true;
+    await _pumpMailList(tester, api);
+    await tester.tap(find.byType(FloatingActionButton));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('compose-to-field')),
+      'bob@outlook.com',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.send_outlined));
+    await tester.pumpAndSettle();
+
+    expect(api.sentMails.length, 1);
+    expect(find.textContaining('发送失败'), findsOneWidget);
+    // 仍在新建邮件页。
+    expect(find.text('新建邮件'), findsOneWidget);
+  });
+
+  testWidgets('顶部未读徽标用服务端计数（而非已加载条数）', (WidgetTester tester) async {
+    // 服务端说收件箱有 85 封未读，而本页只加载了 3 封（其中 2 封未读）。
+    final api = FakeMailApi(
+      folderStats: const {'inbox': MailFolderStats(unread: 85, total: 120)},
+    );
+    await _pumpMailList(tester, api);
+
+    // 取的是 inbox 文件夹计数，徽标显示 85 而非本地的 2。
+    expect(api.statsFolders, ['inbox']);
+    expect(find.text('85'), findsOneWidget);
+    expect(find.text('2'), findsNothing);
+  });
+
+  testWidgets('服务端计数取不到时退回本地已加载未读数', (WidgetTester tester) async {
+    final api = FakeMailApi()..folderStatsFails = true;
+    await _pumpMailList(tester, api);
+
+    // 请求发过但失败 → 徽标退回本地计数 2，不整页报错。
+    expect(api.statsFolders, ['inbox']);
+    expect(find.text('2'), findsOneWidget);
+    expect(find.text('邮件加载失败'), findsNothing);
+  });
+
+  testWidgets('切到已发送取 sentitems 计数；已标星无对应文件夹则不请求', (
+    WidgetTester tester,
+  ) async {
+    final api = FakeMailApi();
+    await _pumpMailList(tester, api);
+    expect(api.statsFolders, ['inbox']);
+
+    // 已发送 → 取 sentitems 文件夹计数。
+    await tester.tap(find.text('收件箱'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('已发送'));
+    await tester.pumpAndSettle();
+    expect(api.statsFolders, ['inbox', 'sentitems']);
+
+    // 已标星是跨文件夹过滤视图，没有文件夹可查 → 不再新增计数请求。
+    await tester.tap(find.text('已发送'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('已标星'));
+    await tester.pumpAndSettle();
+    expect(api.statsFolders, ['inbox', 'sentitems']);
   });
 }

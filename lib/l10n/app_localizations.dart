@@ -170,6 +170,18 @@ abstract class AppLocalizations {
   /// **'已标记为未读'**
   String get mailMarkedUnread;
 
+  /// No description provided for @mailFlagged.
+  ///
+  /// In zh, this message translates to:
+  /// **'已标星'**
+  String get mailFlagged;
+
+  /// No description provided for @mailUnflagged.
+  ///
+  /// In zh, this message translates to:
+  /// **'已取消标星'**
+  String get mailUnflagged;
+
   /// No description provided for @mailActionFailedToast.
   ///
   /// In zh, this message translates to:
@@ -199,6 +211,126 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'重试'**
   String get commonRetry;
+
+  /// No description provided for @mailAccountCopied.
+  ///
+  /// In zh, this message translates to:
+  /// **'已复制邮箱号'**
+  String get mailAccountCopied;
+
+  /// No description provided for @folderInbox.
+  ///
+  /// In zh, this message translates to:
+  /// **'收件箱'**
+  String get folderInbox;
+
+  /// No description provided for @folderUnread.
+  ///
+  /// In zh, this message translates to:
+  /// **'未读邮件'**
+  String get folderUnread;
+
+  /// No description provided for @folderFlagged.
+  ///
+  /// In zh, this message translates to:
+  /// **'已标星'**
+  String get folderFlagged;
+
+  /// No description provided for @folderSent.
+  ///
+  /// In zh, this message translates to:
+  /// **'已发送'**
+  String get folderSent;
+
+  /// No description provided for @composeTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'新建邮件'**
+  String get composeTitle;
+
+  /// No description provided for @composeTo.
+  ///
+  /// In zh, this message translates to:
+  /// **'收件人：'**
+  String get composeTo;
+
+  /// No description provided for @composeCcFrom.
+  ///
+  /// In zh, this message translates to:
+  /// **'抄送/密送, 发件人：'**
+  String get composeCcFrom;
+
+  /// No description provided for @composeImportance.
+  ///
+  /// In zh, this message translates to:
+  /// **'重要性：'**
+  String get composeImportance;
+
+  /// No description provided for @composeImportanceHigh.
+  ///
+  /// In zh, this message translates to:
+  /// **'高'**
+  String get composeImportanceHigh;
+
+  /// No description provided for @composeImportanceNormal.
+  ///
+  /// In zh, this message translates to:
+  /// **'正常'**
+  String get composeImportanceNormal;
+
+  /// No description provided for @composeImportanceLow.
+  ///
+  /// In zh, this message translates to:
+  /// **'低'**
+  String get composeImportanceLow;
+
+  /// No description provided for @composeSubject.
+  ///
+  /// In zh, this message translates to:
+  /// **'主　题：'**
+  String get composeSubject;
+
+  /// No description provided for @composeBodyHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'正文'**
+  String get composeBodyHint;
+
+  /// No description provided for @composeSending.
+  ///
+  /// In zh, this message translates to:
+  /// **'发送中…'**
+  String get composeSending;
+
+  /// No description provided for @composeSent.
+  ///
+  /// In zh, this message translates to:
+  /// **'已发送'**
+  String get composeSent;
+
+  /// No description provided for @composeSendFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'发送失败：{message}'**
+  String composeSendFailed(String message);
+
+  /// No description provided for @composeNoRecipient.
+  ///
+  /// In zh, this message translates to:
+  /// **'请先填写收件人'**
+  String get composeNoRecipient;
+
+  /// No description provided for @composeInvalidRecipient.
+  ///
+  /// In zh, this message translates to:
+  /// **'收件人邮箱格式有误：{value}'**
+  String composeInvalidRecipient(String value);
+
+  /// No description provided for @composeAttachTodo.
+  ///
+  /// In zh, this message translates to:
+  /// **'附件功能待接入'**
+  String get composeAttachTodo;
 
   /// No description provided for @loadMoreLoading.
   ///

@@ -75,6 +75,7 @@ MailMessage mailMessageFromGraph(GraphMessage message, {DateTime? now}) {
     recipient: message.toRecipients.join('; '),
     subject: message.subject,
     fullDate: received == null ? '' : formatFullDate(received),
+    isFlagged: message.isFlagged,
   );
 }
 

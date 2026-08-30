@@ -15,6 +15,8 @@
   "mailDeleted": "Deleted",
   "mailMarkedRead": "Marked as read",
   "mailMarkedUnread": "Marked as unread",
+  "mailFlagged": "Flagged",
+  "mailUnflagged": "Unflagged",
   "mailActionFailedToast": "Action failed: {message}",
   "@mailActionFailedToast": {
     "placeholders": { "message": { "type": "String" } }
@@ -26,6 +28,32 @@
     "placeholders": { "message": { "type": "String" } }
   },
   "commonRetry": "Retry",
+  "mailAccountCopied": "Email address copied",
+  "folderInbox": "Inbox",
+  "folderUnread": "Unread",
+  "folderFlagged": "Flagged",
+  "folderSent": "Sent",
+  "composeTitle": "New Message",
+  "composeTo": "To:",
+  "composeCcFrom": "Cc/Bcc, From:",
+  "composeImportance": "Importance:",
+  "composeImportanceHigh": "High",
+  "composeImportanceNormal": "Normal",
+  "composeImportanceLow": "Low",
+  "composeSubject": "Subject:",
+  "composeBodyHint": "Body",
+  "composeSending": "Sending…",
+  "composeSent": "Sent",
+  "composeSendFailed": "Send failed: {message}",
+  "@composeSendFailed": {
+    "placeholders": { "message": { "type": "String" } }
+  },
+  "composeNoRecipient": "Please add a recipient first",
+  "composeInvalidRecipient": "Invalid recipient email: {value}",
+  "@composeInvalidRecipient": {
+    "placeholders": { "value": { "type": "String" } }
+  },
+  "composeAttachTodo": "Attachments aren't supported yet",
   "loadMoreLoading": "Loading...",
   "loadMoreNoMore": "No more mail",
   "menuImport": "Import",

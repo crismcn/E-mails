@@ -13,7 +13,7 @@ import 'fake_mail_api.dart';
 /// 打开「首页 → 邮件列表」，邮件数据来自注入的 [FakeMailApi]。
 ///
 /// 现在点击列表项**直接进入详情页**（会话页已移除），详情页按 id 懒取全文。
-Future<void> _pumpList(WidgetTester tester) async {
+Future<void> _pumpList(WidgetTester tester, [FakeMailApi? mailApi]) async {
   tester.view.physicalSize = const Size(1080, 2340);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.resetPhysicalSize);
@@ -29,7 +29,7 @@ Future<void> _pumpList(WidgetTester tester) async {
         refreshToken: 'r',
       ),
     ]),
-    mailApi: FakeMailApi(),
+    mailApi: mailApi ?? FakeMailApi(),
   );
   await tester.pumpWidget(
     EmailManagerApp(settings: SettingsController(prefs), api: api),
@@ -74,16 +74,53 @@ void main() {
     expect(find.textContaining('纯文本正文'), findsOneWidget);
   });
 
-  testWidgets('详情页星标点击切换', (WidgetTester tester) async {
-    await _pumpList(tester);
+  testWidgets('详情页星标：乐观更新 + PATCH 回写 Graph', (WidgetTester tester) async {
+    final api = FakeMailApi();
+    await _pumpList(tester, api);
 
+    // 蓝湖 c3-3 服务端未标星 → 进入时空心星。
     await tester.tap(find.text('蓝湖官方'));
     await tester.pumpAndSettle();
-
     expect(find.byIcon(Icons.star_border), findsOneWidget);
     expect(find.byIcon(Icons.star), findsNothing);
 
     await tester.tap(find.byIcon(Icons.star_border));
+    await tester.pumpAndSettle();
+
+    // 回写记录到 Graph：c3-3 → flagged true，并提示已标星。
+    expect(api.flagUpdates, [('c3-3', true)]);
+    expect(find.byIcon(Icons.star), findsOneWidget);
+    expect(find.text('已标星'), findsOneWidget);
+
+    // 再点一次取消标星 → 回写 false。
+    await tester.tap(find.byIcon(Icons.star));
+    await tester.pumpAndSettle();
+    expect(api.flagUpdates, [('c3-3', true), ('c3-3', false)]);
+    expect(find.byIcon(Icons.star_border), findsOneWidget);
+    expect(find.text('已取消标星'), findsOneWidget);
+  });
+
+  testWidgets('详情页星标失败：回滚星标态并提示', (WidgetTester tester) async {
+    final api = FakeMailApi()..updateFlagFails = true;
+    await _pumpList(tester, api);
+
+    await tester.tap(find.text('蓝湖官方'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.star_border));
+    await tester.pumpAndSettle();
+
+    // 发起过写回，但失败 → 提示操作失败、星标回滚为空心。
+    expect(api.flagUpdates, [('c3-3', true)]);
+    expect(find.textContaining('操作失败'), findsOneWidget);
+    expect(find.byIcon(Icons.star_border), findsOneWidget);
+    expect(find.byIcon(Icons.star), findsNothing);
+  });
+
+  testWidgets('详情页进入即回填服务端星标态', (WidgetTester tester) async {
+    await _pumpList(tester);
+
+    // Claude（m1）在假数据里已标星 → 懒取全文后星标应为实心。
+    await tester.tap(find.text('Claude'));
     await tester.pumpAndSettle();
 
     expect(find.byIcon(Icons.star), findsOneWidget);

@@ -15,6 +15,8 @@
   "mailDeleted": "已删除",
   "mailMarkedRead": "已标记为已读",
   "mailMarkedUnread": "已标记为未读",
+  "mailFlagged": "已标星",
+  "mailUnflagged": "已取消标星",
   "mailActionFailedToast": "操作失败：{message}",
   "@mailActionFailedToast": {
     "placeholders": { "message": { "type": "String" } }
@@ -26,6 +28,32 @@
     "placeholders": { "message": { "type": "String" } }
   },
   "commonRetry": "重试",
+  "mailAccountCopied": "已复制邮箱号",
+  "folderInbox": "收件箱",
+  "folderUnread": "未读邮件",
+  "folderFlagged": "已标星",
+  "folderSent": "已发送",
+  "composeTitle": "新建邮件",
+  "composeTo": "收件人：",
+  "composeCcFrom": "抄送/密送, 发件人：",
+  "composeImportance": "重要性：",
+  "composeImportanceHigh": "高",
+  "composeImportanceNormal": "正常",
+  "composeImportanceLow": "低",
+  "composeSubject": "主　题：",
+  "composeBodyHint": "正文",
+  "composeSending": "发送中…",
+  "composeSent": "已发送",
+  "composeSendFailed": "发送失败：{message}",
+  "@composeSendFailed": {
+    "placeholders": { "message": { "type": "String" } }
+  },
+  "composeNoRecipient": "请先填写收件人",
+  "composeInvalidRecipient": "收件人邮箱格式有误：{value}",
+  "@composeInvalidRecipient": {
+    "placeholders": { "value": { "type": "String" } }
+  },
+  "composeAttachTodo": "附件功能待接入",
   "loadMoreLoading": "加载中...",
   "loadMoreNoMore": "没有更多邮件",
   "menuImport": "导入",
