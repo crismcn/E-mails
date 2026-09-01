@@ -4,7 +4,6 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -42,8 +41,7 @@ class MessageDetailPage extends StatefulWidget {
   State<MessageDetailPage> createState() => _MessageDetailPageState();
 }
 
-class _MessageDetailPageState extends State<MessageDetailPage>
-    with SingleTickerProviderStateMixin {
+class _MessageDetailPageState extends State<MessageDetailPage> {
   late bool _starred = widget.message.isFlagged;
 
   /// 标星写回进行中 —— 去重，避免连点发出多次 PATCH。
@@ -69,122 +67,24 @@ class _MessageDetailPageState extends State<MessageDetailPage>
   /// 正在取内容的附件 id —— 防重复请求，并给卡片显示转圈。
   final Set<String> _attachBusy = <String>{};
 
-  // ---- 顶部标题栏 / 底部操作栏的收放 ----
+  // ---- 页面结构 ----
   //
-  // 两条栏都是**绝对定位的浮层**（Stack + Positioned），滚动视图始终铺满整屏、
-  // 靠恒定的上下内边距给浮层让位。收放只做位移，不动滚动视图的尺寸与内边距，
-  // 于是 maxScrollExtent 恒定、正文不会因标题栏进出而跳位。
-
-  /// 越过这个滚动位置才允许收起（贴顶时的小幅抖动不该让标题栏消失）。
-  static const double _kChromeHideOffset = 80;
-
-  /// 回到这个位置以内一定展开 —— 「快到顶部就切回来」。
-  static const double _kChromeShowOffset = 60;
-
-  /// 可滚动距离不足这么多就不收起：短邮件本就一屏看完，收了纯属闪烁。
-  static const double _kChromeMinExtent = 200;
-
-  final ScrollController _scroll = ScrollController();
-
-  final GlobalKey _headerKey = GlobalKey();
-  final GlobalKey _actionBarKey = GlobalKey();
-
-  /// 两条浮层的实测高度 —— 正文照它留内边距，才不会被浮层压住。
-  /// 首帧先用估值（贴近实际值），布局完成后按实测校正一次；写死会因平台字体 /
-  /// 文字缩放不同而差几个像素，正好露在浮层边缘。
-  double _headerHeight = 64;
-  double _actionBarHeight = 66;
-
-  /// 1 = 标题栏与底部操作栏完全展开，0 = 完全收起（正文占满全屏）。
-  late final AnimationController _chrome = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 200),
-    value: 1,
-  );
-
-  late final Animation<double> _chromeFactor = CurvedAnimation(
-    parent: _chrome,
-    curve: Curves.easeOutCubic,
-    reverseCurve: Curves.easeInCubic,
-  );
-
-  /// 收起时整条移出屏幕外沿（上栏往上、下栏往下），由 Stack 裁掉。
-  late final Animation<Offset> _headerSlide = Tween<Offset>(
-    begin: const Offset(0, -1),
-    end: Offset.zero,
-  ).animate(_chromeFactor);
-
-  late final Animation<Offset> _actionBarSlide = Tween<Offset>(
-    begin: const Offset(0, 1),
-    end: Offset.zero,
-  ).animate(_chromeFactor);
-
-  bool _chromeVisible = true;
+  // `Column`：**固定**的返回栏 / 元信息与正文同在一条滚动条里 / **固定**的底部操作栏。
+  //
+  // 返回栏与底部操作栏**不再随滑动收起**（用户要求）。收起过 —— 无论压高度还是浮层
+  // 平移 —— 都会改变正文区尺寸或滚动几何，而正文是个 WebView：一改尺寸就重排、
+  // 重排又吐新的滚动偏移去驱动收放，形成正反馈，表现为「全屏状态来回跳动」。
+  // 不收起就没有这条回路。
 
   @override
   void initState() {
     super.initState();
-    _scroll.addListener(_onScroll);
     // 无全文（htmlBody/body 皆空）且有 id → 懒取。会话预览的 body 可能已含摘要，
     // 但为拿到完整 HTML/纯文本仍以 id 取一次权威全文。
     if (widget.message.id.isNotEmpty && widget.message.htmlBody == null) {
       _loadingBody = true;
     }
   }
-
-  @override
-  void dispose() {
-    _scroll.dispose();
-    _chrome.dispose();
-    super.dispose();
-  }
-
-  /// 上滑（内容上移）收起标题栏与底部操作栏，下滑或快到顶部再切回来。
-  void _onScroll() {
-    if (!_scroll.hasClients) return;
-    final pos = _scroll.position;
-    if (pos.pixels <= _kChromeShowOffset) {
-      _setChromeVisible(true);
-      return;
-    }
-    switch (pos.userScrollDirection) {
-      case ScrollDirection.reverse:
-        if (pos.maxScrollExtent >= _kChromeMinExtent &&
-            pos.pixels > _kChromeHideOffset) {
-          _setChromeVisible(false);
-        }
-      case ScrollDirection.forward:
-        _setChromeVisible(true);
-      case ScrollDirection.idle:
-        break;
-    }
-  }
-
-  void _setChromeVisible(bool visible) {
-    if (visible == _chromeVisible) return;
-    _chromeVisible = visible;
-    if (visible) {
-      _chrome.forward();
-    } else {
-      _chrome.reverse();
-    }
-  }
-
-  /// 量一遍两条浮层的真实高度并校正正文内边距 —— 相等就不 setState，量一次即收敛。
-  void _measureChrome() {
-    if (!mounted) return;
-    final header = _bandHeight(_headerKey);
-    final actionBar = _bandHeight(_actionBarKey);
-    if (header == null || actionBar == null) return;
-    if (header == _headerHeight && actionBar == _actionBarHeight) return;
-    setState(() {
-      _headerHeight = header;
-      _actionBarHeight = actionBar;
-    });
-  }
-
-  static double? _bandHeight(GlobalKey key) =>
-      (key.currentContext?.findRenderObject() as RenderBox?)?.size.height;
 
   @override
   void didChangeDependencies() {
@@ -382,116 +282,147 @@ class _MessageDetailPageState extends State<MessageDetailPage>
   Widget build(BuildContext context) {
     final palette = context.palette;
     final message = _message;
-    WidgetsBinding.instance.addPostFrameCallback((_) => _measureChrome());
     return Scaffold(
       backgroundColor: palette.background,
       body: SafeArea(
-        child: Stack(
+        child: Column(
           children: [
-            // 正文铺满整屏，两条浮层的位置靠内边距空出来（内边距恒定 → 不跳位）。
-            Positioned.fill(
+            _Header(
+              title: message.sender,
+              starred: _starred,
+              onStar: _toggleStar,
+            ),
+            // 整页一条滚动条：收件人 / 主题 / 日期 / 附件 / 正文一起上滑。
+            Expanded(
               child: SingleChildScrollView(
-                controller: _scroll,
-                // 左右不留白：元信息自己带 20 边距，HTML 正文要**通铺整宽**。
-                padding: EdgeInsets.only(
-                  top: _headerHeight + 8,
-                  bottom: _actionBarHeight + 24,
-                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _RecipientRow(recipient: message.recipient),
-                          const SizedBox(height: 20),
-                          Text(
-                            message.subject,
-                            style: TextStyle(
-                              color: palette.textPrimary,
-                              fontSize: 24,
-                              fontWeight: FontWeight.w700,
-                              height: 1.25,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            message.fullDate,
-                            style: TextStyle(
-                              color: palette.textSecondary,
-                              fontSize: 14,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          if (_attachments.isNotEmpty)
-                            _AttachmentSection(
-                              attachments: _attachments,
-                              expanded: _attachExpanded,
-                              bytes: _attachBytes,
-                              busy: _attachBusy,
-                              onToggle: _toggleAttachments,
-                              onOpen: _openAttachment,
-                              onDownload: _downloadAttachment,
-                            ),
-                        ],
-                      ),
+                    _MetaSection(
+                      message: message,
+                      attachments: _attachments,
+                      expanded: _attachExpanded,
+                      bytes: _attachBytes,
+                      busy: _attachBusy,
+                      onToggle: _toggleAttachments,
+                      onOpen: _openAttachment,
+                      onDownload: _downloadAttachment,
                     ),
-                    if (_loadingBody)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: _BodyLoading(preview: message.body),
-                      )
-                    else
-                      _Body(message: message, onTapUrl: _openUrl),
+                    _body(palette, message),
                   ],
                 ),
               ),
             ),
-            // 两条浮层各自套 `ClipRect`：`SlideTransition` 是绘制期变换，浮层的布局
-            // 矩形始终在 `Stack` 范围内，`Stack` 便认定无越界、不装裁剪层，移出去的
-            // 部分会照画 —— 在有刘海 / home 条的机器上就赖在安全区外那条里不走。
-            Positioned(
-              left: 0,
-              right: 0,
-              top: 0,
-              child: ClipRect(
-                child: SlideTransition(
-                  position: _headerSlide,
-                  child: _Header(
-                    key: _headerKey,
-                    title: message.sender,
-                    starred: _starred,
-                    onStar: _toggleStar,
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: ClipRect(
-                child: SlideTransition(
-                  position: _actionBarSlide,
-                  child: _ActionBar(key: _actionBarKey),
-                ),
-              ),
-            ),
+            const _ActionBar(),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// 正文 —— 排在页面那条滚动条里，与上方元信息一起滚。
+  ///
+  /// HTML 交给 [MailHtmlView]：**按页内量到的高度占位、自己不滚**，双指在这块固定
+  /// 高度里缩放 + 平移。纯文本仍是 Flutter 的可选择文本。
+  Widget _body(AppPalette palette, MailMessage message) {
+    if (_loadingBody) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+        child: _BodyLoading(preview: message.body),
+      );
+    }
+    final html = message.htmlBody;
+    if (html != null) {
+      // 左右不留白：邮件按整屏宽设计，挤进边距里会被多缩一截。
+      return LayoutBuilder(
+        builder: (context, constraints) => MailHtmlView(
+          html: html,
+          viewportWidth: constraints.maxWidth,
+          onTapUrl: _openUrl,
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+      child: SelectableText(
+        message.body,
+        style: TextStyle(
+          color: palette.textPrimary,
+          fontSize: 16,
+          height: 1.55,
         ),
       ),
     );
   }
 }
 
+/// 元信息 —— 收件人 / 主题 / 日期 / 附件条，都是原生组件，排在正文上方、同一条
+/// 滚动条里（不再自带高度上限与内部滚动：整页一起滚，它自然会被滑走）。
+class _MetaSection extends StatelessWidget {
+  const _MetaSection({
+    required this.message,
+    required this.attachments,
+    required this.expanded,
+    required this.bytes,
+    required this.busy,
+    required this.onToggle,
+    required this.onOpen,
+    required this.onDownload,
+  });
+
+  final MailMessage message;
+  final List<GraphAttachment> attachments;
+  final bool expanded;
+  final Map<String, Uint8List> bytes;
+  final Set<String> busy;
+  final VoidCallback onToggle;
+  final ValueChanged<GraphAttachment> onOpen;
+  final ValueChanged<GraphAttachment> onDownload;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _RecipientRow(recipient: message.recipient),
+          const SizedBox(height: 20),
+          Text(
+            message.subject,
+            style: TextStyle(
+              color: palette.textPrimary,
+              fontSize: 24,
+              fontWeight: FontWeight.w700,
+              height: 1.25,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            message.fullDate,
+            style: TextStyle(color: palette.textSecondary, fontSize: 14),
+          ),
+          const SizedBox(height: 16),
+          if (attachments.isNotEmpty)
+            _AttachmentSection(
+              attachments: attachments,
+              expanded: expanded,
+              bytes: bytes,
+              busy: busy,
+              onToggle: onToggle,
+              onOpen: onOpen,
+              onDownload: onDownload,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 /// 顶部：返回箭头 + 发件人名（加粗大字）+ 右侧收藏星标。
-///
-/// 是压在正文之上的浮层，故必须自带不透明底色，否则正文会从字缝里透出来。
 class _Header extends StatelessWidget {
   const _Header({
-    super.key,
     required this.title,
     required this.starred,
     required this.onStar,
@@ -548,6 +479,7 @@ class _Header extends StatelessWidget {
 ///
 /// 视觉 1:1 参照「邮件详情-附件信息.jpg」（收起）与「邮件详情-附件预览.jpg」（展开）：
 /// 图片附件出大图预览、底部半透明条压名字与大小；其余文件出「类型角标 + 名称 + 大小」一行。
+/// 它在元信息里（见 [_MetaSection]），与正文同在页面那条滚动条中。
 class _AttachmentSection extends StatelessWidget {
   const _AttachmentSection({
     required this.attachments,
@@ -890,44 +822,6 @@ class _RecipientRow extends StatelessWidget {
   }
 }
 
-/// 正文 —— HTML 交给系统 WebView 渲染（[MailHtmlView]），否则纯文本。
-///
-/// HTML 走 WebView 的取舍：换来真正的浏览器排版（表格 / 定位 / webfont / 双指缩放，
-/// 宽邮件由引擎整体缩放而不是 Flutter 侧等比压扁），代价是正文变成一块平台视图 ——
-/// 文字不参与 Flutter 的文本选择，高度得靠页内脚本回报（见 [MailHtmlView]）。
-class _Body extends StatelessWidget {
-  const _Body({required this.message, required this.onTapUrl});
-
-  final MailMessage message;
-  final Future<bool> Function(String) onTapUrl;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final html = message.htmlBody;
-    if (html != null) {
-      return LayoutBuilder(
-        builder: (context, constraints) => MailHtmlView(
-          html: html,
-          viewportWidth: constraints.maxWidth,
-          onTapUrl: onTapUrl,
-        ),
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: SelectableText(
-        message.body,
-        style: TextStyle(
-          color: palette.textPrimary,
-          fontSize: 16,
-          height: 1.55,
-        ),
-      ),
-    );
-  }
-}
-
 /// 正文懒取中 —— 先展示已有预览文字 + 一行转圈，避免整页空白。
 class _BodyLoading extends StatelessWidget {
   const _BodyLoading({required this.preview});
@@ -962,10 +856,8 @@ class _BodyLoading extends StatelessWidget {
 }
 
 /// 底部操作栏 —— 回复 / 全部回复 / 转发 / 删除 / 更多。
-///
-/// 同 [_Header]，是压在正文之上的浮层，底色不透明。
 class _ActionBar extends StatelessWidget {
-  const _ActionBar({super.key});
+  const _ActionBar();
 
   @override
   Widget build(BuildContext context) {

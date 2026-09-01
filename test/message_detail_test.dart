@@ -25,14 +25,6 @@ class MailHtmlDocumentMatcher {
     expect(document, isNotNull);
     return document!.html;
   }
-
-  double get layoutScale {
-    final finder = find.byType(MailHtmlUnavailable);
-    expect(finder, findsOneWidget);
-    return (finder.evaluate().single.widget as MailHtmlUnavailable)
-        .document!
-        .layoutScale;
-  }
 }
 
 /// 打开「首页 → 邮件列表」，邮件数据来自注入的 [FakeMailApi]。
@@ -79,14 +71,18 @@ void main() {
     await tester.tap(find.text('蓝湖官方'));
     await tester.pumpAndSettle();
 
-    // 收件人等元信息仍是 Flutter 侧的；正文原文被包进 WebView 那份文档里
-    // （正文文字已不在 Flutter 树上，故不能再用 find.text 断言）。
+    // 收件人 / 主题 / 日期是**原生组件**（在可收起的顶部区里）；
+    // 正文原文被包进 WebView 那份文档里（正文文字不在 Flutter 树上）。
     expect(find.text('收件人：'), findsOneWidget);
+    expect(find.text('蓝湖免费版权益调整通知 尊敬的蓝湖用户'), findsOneWidget);
     final html = _htmlDoc.html;
     expect(html, contains('https://example.com/detail'));
     expect(html, contains('前往安全中心'));
     expect(html, contains('<meta name="viewport"'));
+    // 正文按页内量到的高度占位 → 需要那一段量高脚本（带 nonce，邮件自带的进不来）。
     expect(html, contains("script-src 'nonce-"));
+    expect(html, contains('<script nonce="'));
+    expect('<script'.allMatches(html).length, 1);
   });
 
   testWidgets('点击列表项 → 详情页懒取纯文本全文按纯文本渲染', (WidgetTester tester) async {
@@ -216,13 +212,11 @@ void main() {
     await tester.tap(find.text('Cursor Team'));
     await tester.pumpAndSettle();
 
-    // 不再是 Flutter 侧 FittedBox 压扁：视口声明成 600，浏览器自己缩到屏宽，
+    // 不是 Flutter 侧 FittedBox 压扁：视口声明成 600，浏览器自己缩到屏宽，
     // 文字由引擎按缩放后的字号重绘，不发虚。
     expect(_htmlDoc.html, contains('content="width=600"'));
-    // 正文通铺整宽（360），故缩放比 = 360/600。
-    expect(_htmlDoc.layoutScale, closeTo(360 / 600, 0.0001));
 
-    // 全页只有纵向滚动，正文没有额外的横向滚动视图。
+    // 正文横向溢出由 WebView 自己消化，Flutter 侧没有额外的横向滚动视图。
     expect(
       find.byWidgetPredicate(
         (w) => w is ScrollView && w.scrollDirection == Axis.horizontal,
@@ -231,86 +225,33 @@ void main() {
     );
   });
 
-  testWidgets('长邮件上滑：两条浮层滑出屏幕，下滑再切回来，正文不跳位', (WidgetTester tester) async {
-    // 带刘海 / home 条的机型：安全区内边距是这条逻辑的关键场景 —— 浮层往外滑
-    // 会滑进安全区之外那两条里，没裁剪就赖在那儿不消失。
-    tester.view.padding = const FakeViewPadding(top: 141, bottom: 102);
-    addTearDown(tester.view.resetPadding);
-
+  testWidgets('整页一条滚动条：上滑时收件人 / 主题跟着滚走，返回栏与底部操作栏不收起', (
+    WidgetTester tester,
+  ) async {
     await _pumpList(tester);
-    // 用纯文本长邮件：HTML 正文在测试里没有平台视图、高度为 0，撑不出滚动距离。
+    // 纯文本长邮件：HTML 正文在测试里没有平台视图、撑不出滚动，故用纯文本验证。
     await tester.tap(find.text('Claude'));
     await tester.pumpAndSettle();
 
-    // 两条栏是绝对定位浮层，收放只做位移 —— 故看 SlideTransition 的位移分数
-    // （它的位移是绘制期变换，量它自己的 rect 拿不到，要么看 value 要么量子树）。
-    Finder band(Finder inner) =>
-        find.ancestor(of: inner, matching: find.byType(SlideTransition)).first;
-    Offset slide(Finder inner) =>
-        tester.widget<SlideTransition>(band(inner)).position.value;
-    double maxExtent() => tester
-        .state<ScrollableState>(find.byType(Scrollable).first)
-        .position
-        .maxScrollExtent;
+    final recipientBefore = tester.getTopLeft(find.text('收件人：')).dy;
+    final headerBefore = tester.getTopLeft(find.byIcon(AppIcons.back)).dy;
+    final actionBefore = tester.getTopLeft(find.text('回复')).dy;
 
-    final header = find.byIcon(AppIcons.back);
-    final actionBar = find.text('回复');
-    final headerShown = tester.getRect(header);
-    final actionBarShown = tester.getRect(actionBar);
-    final headerBand = tester.getSize(band(header)).height;
-    final actionBarBand = tester.getSize(band(actionBar)).height;
-    final extentShown = maxExtent();
-    expect(slide(header), Offset.zero);
-    expect(slide(actionBar), Offset.zero);
-
-    // 拖屏幕中央（主题上滑后已移出视口，拿不到可用的落点）。
-    const at = Offset(180, 400);
-    await tester.dragFrom(at, const Offset(0, -300));
-    await tester.pumpAndSettle();
-
-    // 全屏让给正文：各自整条向外挪出自身高度（标题栏往上、操作栏往下）。
-    expect(slide(header), const Offset(0, -1));
-    expect(slide(actionBar), const Offset(0, 1));
-    expect(tester.getRect(header).top, closeTo(headerShown.top - headerBand, 0.01));
-    expect(
-      tester.getRect(actionBar).top,
-      closeTo(actionBarShown.top + actionBarBand, 0.01),
+    // 上滑。用 `timedDrag` 慢速拖拽而非 `drag` 快速甩：SelectableText 与滚动视图
+    // 抢手势时，极高速的测试手势会被当成选择操作吞掉。
+    await tester.timedDrag(
+      find.byType(SingleChildScrollView).last,
+      const Offset(0, -320),
+      const Duration(milliseconds: 300),
     );
-
-    // 挪出去的部分靠**贴着浮层的** ClipRect 裁掉：Stack 不会裁绘制期变换（浮层的
-    // 布局矩形没越界，它认定无溢出、不装裁剪层），少了它，浮层会露在安全区那两条里。
-    for (final inner in [header, actionBar]) {
-      final clip = find
-          .ancestor(of: band(inner), matching: find.byType(ClipRect))
-          .first;
-      expect(tester.getSize(clip).height, tester.getSize(band(inner)).height);
-    }
-
-    // 关键：滚动视图尺寸与内边距都没动 → 可滚动距离不变，正文不会跳一段。
-    expect(maxExtent(), extentShown);
-
-    // 反向下滑 → 两条又切回原位。
-    await tester.dragFrom(at, const Offset(0, 200));
-    await tester.pumpAndSettle();
-    expect(slide(header), Offset.zero);
-    expect(slide(actionBar), Offset.zero);
-    expect(tester.getRect(header), headerShown);
-    expect(tester.getRect(actionBar), actionBarShown);
-    expect(maxExtent(), extentShown);
-  });
-
-  testWidgets('内容装得下一屏时上滑不收起标题栏（可滚动距离不足）', (WidgetTester tester) async {
-    // 同一封长邮件，把屏幕拉得足够高 → 一屏装得下，收放门槛不该被触发。
-    await _pumpList(tester, null, 6000);
-    await tester.tap(find.text('Claude'));
     await tester.pumpAndSettle();
 
-    final header = find.byIcon(AppIcons.back);
-    final before = tester.getRect(header);
-
-    await tester.dragFrom(const Offset(180, 400), const Offset(0, -300));
-    await tester.pumpAndSettle();
-
-    expect(tester.getRect(header), before);
+    // 元信息与正文同在一条滚动条里 → 一起往上走。
+    expect(tester.getTopLeft(find.text('收件人：')).dy, lessThan(recipientBefore));
+    // 返回栏与底部操作栏是固定的：不收起、不平移 —— 收起会改正文区尺寸，
+    // WebView 一重排就吐新偏移驱动收放，正反馈表现为「全屏来回跳动」。
+    expect(tester.getTopLeft(find.byIcon(AppIcons.back)).dy, headerBefore);
+    expect(tester.getTopLeft(find.text('回复')).dy, actionBefore);
+    expect(find.byType(SizeTransition), findsNothing);
   });
 }

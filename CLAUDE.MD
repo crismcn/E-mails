@@ -43,7 +43,7 @@
 | 首页 / 账号总览 | `lib/pages/home_page.dart` | 三统计卡 + 账号列表；吸顶头部（标题上滑被汇总覆盖后固定）；长按进多选，底部操作栏（健康检测 / 删除 / 全选）；右上角「…」菜单 → 导入 / 设置 |
 | 导入邮箱 | `lib/pages/import_page.dart` | CSV 文件导入 + 文本粘贴导入；格式说明卡；底部「确认导入」落安全存储 |
 | 邮件列表 | `lib/pages/mail_list_page.dart` | 某账号的 Graph 真实收件箱；下拉刷新 / 上滑翻页（`$skip`）；左滑归档 / 已读 / 删除；点击进详情并自动标已读 |
-| 邮件详情 | `lib/pages/message_detail_page.dart` | 单封邮件；懒取全文；**HTML 正文交给系统 WebView 渲染**（`MailHtmlView`，非 HTML 仍走 Flutter 纯文本）；上滑收起顶部标题栏 + 底部操作栏（两条都是 `Stack` 里的**绝对定位浮层**，各自套 `ClipRect` 后靠 `SlideTransition` 滑出屏幕外沿；滚动视图恒定铺满整屏、内边距不变，故收放不改 `maxScrollExtent`、正文不跳位。下滑或贴顶即切回）；收件人 / 完整日期；附件条（收起显示「N 个附件 + 总大小」，展开出图片预览与文件行，点击交给系统应用打开、打不开转下载） |
+| 邮件详情 | `lib/pages/message_detail_page.dart` | 单封邮件；懒取全文；**整页一条滚动条**——固定的返回栏 / `Expanded` 里一条滚动视图（收件人 / 主题 / 日期 / 附件 / 正文一起上滑，HTML 交给按内容高度占位的 WebView，见 §5.5）/ 固定的底部操作栏；顶 / 底栏**不随滑动收起**（收放会让 WebView 重排、正反馈跳动）；附件条（收起显示「N 个附件 + 总大小」，展开出图片预览与文件行，点击交给系统应用打开、打不开转下载） |
 | 设置 | `lib/pages/settings_page.dart` | 主题（跟随系统 / 暗黑 / 亮白）+ 语言（中文 / English），分段控件切换，即时持久化 |
 
 > 设计稿（仓库根）：`邮件列表.jpg`、`邮件列表消息.jpg`、`邮件详情.jpg`、`长按操作.jpg`。新页面要求 **1:1 还原设计稿**。
@@ -63,8 +63,28 @@
 ### 4.2 图标
 - **页面不直接写 `Icons.xxx`**，统一走 `lib/theme/app_icons.dart` 的语义常量（`AppIcons.back` / `AppIcons.starFilled` …）。换整套图标只动这一个文件。
 - 主来源是 **iconfont**（阿里图标库，项目「Outlooks」id `5228387`）：字库 `assets/fonts/iconfont.ttf`，码点抄自同目录 `iconfont.json`，pubspec 里声明为家族 `IconFont`。加图标的流程：iconfont 项目里挑好 → 重新下载覆盖 ttf + json → 按 `font_class` 在 `app_icons.dart` 补常量。
-- 还没挑到的图标暂时回退 Material（`app_icons.dart` 的「待补」区），补齐时页面代码不用动。
-- 常量必须是 **`const IconData`**，release 的 `--tree-shake-icons` 才能把字库裁到只剩用到的字形。
+- **`iconfont.json` 的名字字段都不可信**——`name` 出过错（`right-align` 与 `left-align` 两条都叫「left-align」），`font_class` 也出过错（不同批次里 `checked-all` / `deselect-all` 互换，而两个码点上的字形一直没变）。**只认字形**：拿不准就渲染出来看图 / 量几何。
+- **覆盖字库后码点会重排**，老码点可能消失或换成别的图形。两类后果差别很大：
+  - **码点消失** → debug/profile 照跑（缺的字形只是画不出来），只有 release 的 `--tree-shake-icons` 会整个打包失败：`Codepoint 59198 not found in font, aborting`（**十进制**，换成 hex 才好定位）。这条已被 `test/app_icons_test.dart` 前移到 `flutter test`，覆盖字库后跑一遍就知道要改哪几个常量。
+  - **码点还在但换了图形（或两个图形互换）** → 编译、打包、测试全过，只是界面上图标不对。**没有自动化能兜住，只能看图**：
+    ```bash
+    python3 - <<'PY'
+    import json
+    from PIL import Image, ImageDraw, ImageFont
+    gs=json.load(open('assets/fonts/iconfont.json'))['glyphs']
+    fo=ImageFont.truetype('assets/fonts/iconfont.ttf',46); lb=ImageFont.load_default()
+    CW,CH,C=96,96,7; R=(len(gs)+C-1)//C
+    im=Image.new('RGB',(C*CW,R*CH),(255,)*3); d=ImageDraw.Draw(im)
+    for i,g in enumerate(gs):
+        cp=int(g['unicode'],16); x,y=(i%C)*CW,(i//C)*CH
+        d.text((x+CW//2,y+33),chr(cp),font=fo,fill=(15,20,28),anchor='mm')
+        d.text((x+3,y+64),g['font_class'][:16],font=lb,fill=(170,0,0))
+        d.text((x+3,y+76),'0x%04X'%cp,font=lb,fill=(0,0,190))
+    im.save('/tmp/iconfont.png')
+    PY
+    ```
+- 少数造型字库里还没有（裸对勾 / 断网 / 回复全部 / 通用文件），仍回退 Material（`app_icons.dart` 末尾「待补」区），补齐时页面代码不用动。
+- 常量必须是 **`const IconData`**，release 的 `--tree-shake-icons` 才能把字库裁到只剩用到的字形。码点可以在 BMP 之外（曾出现 `0x100CF`），`Icon` 与 tree-shaker 都能处理。
 - `uses-material-design: true` **不能关**：Material 组件内部自己画的图标（DropdownButton 箭头、TextField 清除、Slidable 等）仍取 MaterialIcons 字体。
 - iconfont 字形的字面尺寸不统一（有的填满 1.0em，有的只有 0.56em），跟 Material 的 0.83em 混排时同一个 `size:` 观感会不一致，必要时按调用点微调 `size`。
 
@@ -129,30 +149,71 @@ HTML 正文交给**系统 WebView**（`webview_flutter`，iOS WKWebView / Androi
 `flutter_widget_from_html_core` 画成原生 widget，排版还原度不够（表格、定位、webfont），已换掉。
 
 - **包装文档是纯函数**：`lib/data/mail_html_document.dart` 的 `buildMailHtmlDocument`
-  把正文包成一整份 HTML（视口 + CSP + 注入样式 + 量高脚本），可单测；`lib/widgets/mail_html_view.dart`
-  只管 WebView 生命周期。
+  把正文包成一整份 HTML（视口 + CSP + 注入样式），可单测；
+  `lib/widgets/mail_html_view.dart` 只管 WebView 生命周期。
 - **正文是发件人可控的敌意输入**，安全姿态写死在那份文档里：CSP `default-src 'none'`，只放开
-  图片 / 内联样式 / 字体；脚本仅允许带**每份随机 nonce** 的那一段（量高度用），邮件自带
-  `<script>`、内联 `onclick`、`<iframe>`、表单提交、`<base>` 全被挡；`<script>` 整块另外物理删一遍。
-  链接一律不在 WebView 内导航，只把 `http/https/mailto/tel` 交给外部浏览器（`isSafeMailLink`）。
+  图片 / 内联样式 / 字体，**脚本只放行带随机 nonce 的那一段**（量高用，`Random.secure` 每份文档
+  重生成）；邮件自带 `<script>`、内联 `onclick`、`<iframe>`、表单提交、`<base>` 全被挡；
+  `<script>` 整块另外物理删一遍。链接一律不在 WebView 内导航，只把 `http/https/mailto/tel`
+  交给外部浏览器（`isSafeMailLink`）。
   **远程图片照旧加载**（跟踪像素照旧能打点），要拦得做成「点按钮才显示图片」。
-- **高度**：WebView 自己不滚，由页内脚本回报高度、组件按该高度占位，整页仍是一条滚动条。
-  量高度取 `#mail-root` / `body` / `documentElement` 三种量法的**最大值**并持续跟进
-  （`ResizeObserver` + 10 拍轮询），`onPageFinished` 后宿主侧再隔几拍量几次兜底。
-  少量一种就会截断长邮件，宁可多留一点空白。另外用 `!important` 压掉邮件写给 `html/body`
-  的 `height:100%` / `overflow:hidden`（那是给桌面客户端整页布局用的，照办会压成一屏高）。
+- **整页一条滚动条**：`Column` 三层 —— **固定**的返回栏、`Expanded` 里一条
+  `SingleChildScrollView`（收件人 / 主题 / 日期 / 附件 / 正文都在里面，一起上滑）、
+  **固定**的底部操作栏。正文 WebView **按页内量到的渲染高度占位、自己不滚**。
+- **盒子高度 = `min(页内量到的 CSS 高度 × layoutScale, 纹理安全边 ÷ dpr)`**，与双指缩放彻底解耦。
+  - `layoutScale` 是排版缩放比，只跟这封邮件的声明宽度有关。曾按 `× visualViewport.scale`
+    重新定高想让放大后的下半截靠页面滚动看完，缩放比能到 10、盒子被撑成几万逻辑像素 →
+    **一放大就闪退**。
+  - **纹理安全边（`_kMaxTexturePhysical = 8192` 物理像素）是硬约束**：Android 平台视图走纹理合成
+    （`initSurfaceAndroidView`），WebView 被画进一张**按控件尺寸开的纹理**，受
+    `GL_MAX_TEXTURE_SIZE` 约束（常见 4096–16384）。越界 → 纹理被 clamp 再拉伸铺满 = **画面变形**；
+    缩放时每帧重绘巨型表面 = **整机卡死**。运行时拿不到真实上限，只能取个几乎所有机型都满足的值。
+  - **开 Hybrid Composition 是试过又退回的路**：`displayWithHybridComposition: true` 确实绕开了
+    纹理尺寸限制（插件注释写着「有性能代价，但没有 SurfaceTexture 的尺寸限制」），但真机上
+    **滚动明显卡顿** —— 它让叠在平台视图上的内容走 `FlutterImageView` 覆盖层。故改回默认合成 +
+    上面那道高度上限。
+- **单指拖动归谁，看「WebView 内部现在还能不能纵向滚」**（页内脚本回报的布尔量，
+  判据是 `内容高度 > visualViewport.height`）：
+  - 能内滚（**双指放大后**可视视口变小 / 邮件超过高度上限被夹）→ 单指归 WebView，在里面滚，
+    够得着被放大遮住的内容；
+  - 不能内滚（常态：盒子正好装下全文）→ 单指归外层滚动视图，整页一起上滑。
+  - 双指**永远**归 WebView（缩放 + 平移）；单指点击靠竞技场清算落到平台视图，链接照样点得动。
+  - 实现是自写的 `_MultiTouchGestureRecognizer`（手指落下时现问一次那个布尔量）。`Set<Factory>`
+    在 State 里只建一份 —— 每帧换新的会让平台视图反复重挂。
+  - **那个布尔量刻意不进 `setState`**：双指平移时它频繁翻转，只被识别器读、不参与绘制；
+    重建界面会把 WebView 一起重排。这也是「监听 `visualViewport` 是安全的」的前提 ——
+    历史上炸的是「按缩放比重新定高」，不是监听本身。
+  - **已知取舍**：超过高度上限的长邮件，单指滑正文时滚的是 WebView 内部（元信息不跟着走），
+    要滑走元信息得在元信息那块拖。绝大多数邮件在上限内，不会走到这条分支。
+- **顶 / 底栏不收起**（用户明确要求）。收起过三轮：压高度（`SizeTransition`）、浮层平移
+  （`Stack` + `SlideTransition`）、由正文滚动位置驱动，都留着同一条病根 —— 收放会改正文区尺寸或
+  滚动几何，而正文是 WebView：一改尺寸就重排、重排又吐新偏移去驱动收放，**正反馈**表现为
+  「全屏状态来回跳动」。不收起就没有这条回路，`_chrome` / `_chromeFactor` / `_onBodyScroll` /
+  `setOnScrollPositionChange` / `SizeTransition` 全部删掉。
+- **量高**：页内脚本取 `#mail-root` / `body` / `documentElement` 三种量法的**最大值**
+  （邮件可能写死 body 高度、可能整封浮动、可能被 `overflow` 裁掉，少量一种就截断），
+  `ResizeObserver` + `visualViewport` 事件 + 10 拍轮询跟进；同一条消息里带上「能否内部滚动」。
+  宿主侧 `onPageFinished` 后再隔几拍调页内的 `window.mailMetrics()` 兜底（两条路径同一套量法）。
+  高度**只涨不缩**，免得来回抖。
+  仍用 `!important` 压掉邮件写给 `html/body` 的 `height:100%` / `overflow:hidden`
+  （那是给桌面客户端整页布局用的，照办会把正文压成一屏高）。
+- **滚动条**：WebView 的原生滚动条一律关掉（`setVerticalScrollBarEnabled(false)` / 横向同理，
+  两个平台都支持，调用前问一下 `supportsSetScrollBarsEnabled()`）—— 盒子等于内容高度时本不该
+  出现，但**放大之后 WebView 内部就有可滚距离了**，那两条会冒出来。邮件自带的内层滚动容器另由
+  文档里的 `::-webkit-scrollbar{width:0;height:0}` 关（主视口那条是原生绘制，CSS 管不到）。
 - **宽度**：`htmlDeclaredWidth` 推断出的声明宽度超过屏宽时，视口写成 `width=<声明宽度>`，
-  由浏览器整体缩到屏宽（引擎重绘，比 Flutter 侧 `FittedBox` 压扁清晰）。双指缩放开着。
+  由浏览器整体缩到屏宽作为**初始适配**（引擎重绘、清晰；之后可双指放大）。
   **坑：`webview_flutter_android` 默认 `useWideViewPort = false`，会忽略 `viewport` meta** ——
-  于是按屏宽排版、不缩放，而 Flutter 侧又按声明宽度算了缩放比，长邮件被截掉一半。
-  必须显式 `AndroidWebViewController.setUseWideViewPort(true)`（故直接依赖了
-  `webview_flutter_android`）。iOS 的 WKWebView 原生就认 viewport meta。
+  于是按屏宽排版、无视声明宽度，写死 600px 的邮件会横向溢出。必须显式
+  `AndroidWebViewController.setUseWideViewPort(true)`（故直接依赖了 `webview_flutter_android`）。
+  iOS 的 WKWebView 原生就认 viewport meta。
 - **暗色**：邮件都按白底黑字写，故暗色主题下整份文档 `filter: invert(1) hue-rotate(180deg)`，
   图片再反一次抵消。已知取舍：白底 logo 仍是白块、元素的 `background-image` 会被反色、
   深底设计的邮件会被反成亮底。要改姿态只动 `_kDarkFilter` 一处。
 - **测试**：widget 测试环境没有平台视图，`MailHtmlView` 检测到 `WebViewPlatform.instance == null`
-  就降级成 `MailHtmlUnavailable`（挂着生成好的文档供断言）。所以**HTML 正文在测试里高度为 0**，
-  要撑滚动距离的用例（如上滑收起标题栏）必须用纯文本长邮件。
+  就降级成 `MailHtmlUnavailable`（挂着生成好的文档供断言）。所以**HTML 正文在测试里不渲染、高度为 0**，
+  要撑出滚动距离的用例必须用纯文本长邮件；多指手势、纹理尺寸、Hybrid Composition、原生滚动条
+  都碰不到，**缩放与变形 / 卡死只能真机验**。
 
 ---
 

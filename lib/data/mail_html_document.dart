@@ -2,11 +2,15 @@ import 'dart:math';
 
 import 'mail_mapper.dart' show htmlDeclaredWidth;
 
-/// 正文高度回报用的 JS 通道名 —— WebView 侧 `MailHeight.postMessage(高度)`。
-const String kMailHeightChannel = 'MailHeight';
+/// 正文度量回报用的 JS 通道名 —— WebView 侧 `MailMetrics.postMessage("高度,能否内部滚动")`。
+const String kMailMetricsChannel = 'MailMetrics';
 
-/// 正文外层包一层自己的容器 —— 量高度以它为准，不受邮件给 `body` 的
-/// `height:100%` / `overflow:hidden` 影响。
+/// 页内挂在 `window` 上的度量函数名 —— 宿主兜底时直接
+/// `runJavaScriptReturningResult('$kMailMetricsProbe()')`，量法与主动回报完全一致。
+const String kMailMetricsProbe = 'mailMetrics';
+
+/// 正文外层包一层自己的容器 —— 量高度以它为准，也便于用 CSS 压掉邮件给 `body` 的
+/// `height:100%` / `overflow:hidden`（那是给桌面客户端整页布局用的）。
 const String kMailRootId = 'mail-root';
 
 /// 邮件正文渲染成的一整份 HTML 文档（含视口、CSP、注入样式与量高脚本）。
@@ -20,10 +24,15 @@ class MailHtmlDocument {
   ///
   /// 非响应式邮件（写死 `<table width="600">`）按 600 的「虚拟视口」排版、由浏览器
   /// 整体缩到屏宽，于是 JS 量到的 CSS 像素高度要乘这个比例才是**实际占屏高度**。
+  ///
+  /// 它只跟这封邮件的排版有关，**与用户双指缩放无关** —— 盒子高度一旦按它定死就不再
+  /// 变（曾按 `visualViewport.scale` 重新定高，缩放比能到 10、盒子被撑成几万像素，
+  /// 一放大就闪退）。放大后看溢出部分靠 WebView 内部平移。
   final double layoutScale;
 }
 
-/// `<script>` 整块 —— CSP 已禁脚本，这里再物理删一遍（多一层，不指望正则万无一失）。
+/// `<script>` 整块 —— CSP 只放行带 nonce 的那段，这里再把邮件自带的物理删一遍
+/// （多一层，不指望正则万无一失）。
 final RegExp _kScriptBlock = RegExp(
   r'<script\b[^>]*>[\s\S]*?</script\s*>|<script\b[^>]*/?>',
   caseSensitive: false,
@@ -41,6 +50,9 @@ bool isSafeMailLink(String url) {
 
 /// 把邮件正文 HTML 包成一份可安全渲染的完整文档。
 ///
+/// **正文 WebView 按这份文档渲染完的高度占位、自己不滚**，与上方收件人 / 主题 / 附件
+/// 共用页面那一条滚动条；故这里需要一段量高脚本把高度回报给宿主。见 `MailHtmlView`。
+///
 /// 安全姿态（正文是**发件人可控**的内容，按敌意输入对待）：
 /// - `<meta http-equiv="Content-Security-Policy">` 只放开图片 / 内联样式 / 字体，
 ///   脚本仅允许带 [nonce] 的那一段（也就是下面量高度用的那几行）。邮件自带的
@@ -53,9 +65,9 @@ bool isSafeMailLink(String url) {
 ///
 /// 排版：
 /// - 声明宽度（[htmlDeclaredWidth]）超过 [viewportWidth] 时，视口按声明宽度铺开，
-///   由浏览器整体缩到屏宽 —— 文字是引擎重绘的，比 Flutter 侧等比缩小清晰。
-/// - 不写 `user-scalable=no`，双指缩放可用。
-/// - 长串不可断的 URL 靠 `overflow-wrap: anywhere` 折行，不再撑出横条。
+///   由浏览器整体缩到屏宽作为**初始适配**（引擎重绘，比 Flutter 侧等比压扁清晰）。
+/// - 不写 `user-scalable=no`，双指缩放可用（在固定高度的盒子内缩放 + 平移）。
+/// - 长串不可断的 URL 靠 `overflow-wrap: anywhere` 折行，不撑出横条。
 ///
 /// 配色：[dark] 时整份文档做反色（`invert` + `hue-rotate`），图片再反一次抵消 ——
 /// 邮件都是按白底黑字写的，这样能在不猜发件人配色的前提下保证文字始终可读，
@@ -125,6 +137,9 @@ String _style({required bool dark, required String background}) =>
     'img{max-width:100%;height:auto}'
     'table{max-width:100%}'
     'pre{white-space:pre-wrap}'
+    // 邮件自带的内层滚动容器不画滚动条（主视口那条是原生绘制的，靠
+    // `setVerticalScrollBarEnabled(false)` 关，见 MailHtmlView）。
+    '::-webkit-scrollbar{width:0;height:0}'
     '${dark ? _kDarkFilter : ''}';
 
 /// 反色一遍全文，图片 / 视频再反回来 —— 照片和 logo 的颜色才是对的。
@@ -135,24 +150,44 @@ const String _kDarkFilter =
     'html{filter:invert(1) hue-rotate(180deg)}'
     'img,video,picture,svg,canvas{filter:invert(1) hue-rotate(180deg)}';
 
-/// 量正文高度并回报 —— 图片是后到的，故用 `ResizeObserver` 持续跟。
+/// 量正文高度、并顺带告诉宿主「WebView 内部现在还能不能纵向滚」。
 ///
-/// 取几种量法的**最大值**：邮件可能给 `body` 写死高度、可能整封浮动（父元素高度塌成
-/// 0）、也可能被 `overflow` 裁掉。少量一种就会把长邮件截断，宁可多算一点空白。
+/// 高度取 `#mail-root` / `body` / `documentElement` 三种量法的**最大值**：邮件可能给
+/// `body` 写死高度、可能整封浮动（父元素高度塌成 0）、也可能被 `overflow` 裁掉。
+/// 少量一种就会把长邮件截断，宁可多算一点空白。图片是后到的，故 `ResizeObserver`
+/// + 轮询持续跟。
+///
+/// 「能不能内部滚」= 内容高度是否超过**可视视口**（`visualViewport.height`，双指放大
+/// 后它会变小）。宿主拿它决定单指拖动归谁：能内滚就归 WebView（放大后够得着下半截 /
+/// 超高被截顶的邮件也能读全），不能内滚就归外层页面（整页一起上滑）。
+///
+/// **刻意不回报缩放比去改盒子高度**：那条路上盒子会被撑成几万像素，一放大就闪退。
+/// 这里回报的高度与缩放无关，缩放只影响那个布尔量，宿主收到它不重建界面。
 String _heightProbe() =>
-    '(function(){var last=-1;'
+    '(function(){var lastH=-1;var lastS=-1;'
     'function measure(){var r=document.getElementById("$kMailRootId");'
     'var d=document.documentElement;var b=document.body;var h=0;'
     'if(r){h=Math.max(h,r.scrollHeight,r.getBoundingClientRect().bottom);}'
     'if(b){h=Math.max(h,b.scrollHeight);}'
     'if(d){h=Math.max(h,d.scrollHeight);}'
     'return Math.ceil(h);}'
-    'function report(){var h=measure();if(h<=0||h===last){return;}last=h;'
-    '$kMailHeightChannel.postMessage(String(h));}'
+    'function view(){var v=window.visualViewport;'
+    'return v?v.height:document.documentElement.clientHeight;}'
+    'function metrics(){var h=measure();'
+    'return h+","+((h-view())>2?1:0);}'
+    'function report(){var h=measure();var s=(h-view())>2?1:0;'
+    'if(h<=0||(h===lastH&&s===lastS)){return;}lastH=h;lastS=s;'
+    '$kMailMetricsChannel.postMessage(h+","+s);}'
+    'window.$kMailMetricsProbe=metrics;'
     'report();window.addEventListener("load",report);'
     'if(window.ResizeObserver){var ro=new ResizeObserver(report);'
     'ro.observe(document.documentElement);'
     'var r=document.getElementById("$kMailRootId");if(r){ro.observe(r);}}'
+    // 双指缩放 / 平移会改可视视口 —— 只有那个布尔量会变，宿主不重建界面，
+    // 所以这里监听是安全的（历史上是「按缩放比重新定高」才炸的）。
+    'if(window.visualViewport){'
+    'window.visualViewport.addEventListener("resize",report);'
+    'window.visualViewport.addEventListener("scroll",report);}'
     // 图片没有 load 事件冒泡到 window 的保障（缓存命中时可能早于监听），
     // 再补几拍轮询兜底。
     'var n=0;var t=setInterval(function(){report();if(++n>10){'
@@ -164,6 +199,5 @@ String _invertHex(String hex) {
   if (v.length != 6) return '#ffffff';
   final n = int.tryParse(v, radix: 16);
   if (n == null) return '#ffffff';
-  final inverted = 0xFFFFFF - n;
-  return '#${inverted.toRadixString(16).padLeft(6, '0')}';
+  return '#${(0xFFFFFF - n).toRadixString(16).padLeft(6, '0')}';
 }

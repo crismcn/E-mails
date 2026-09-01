@@ -712,10 +712,7 @@ class _ComposePageState extends State<ComposePage> {
     final l10n = AppLocalizations.of(context);
     return Container(
       height: 48,
-      decoration: BoxDecoration(
-        color: palette.card,
-        border: Border(top: BorderSide(color: palette.divider, width: 1)),
-      ),
+      decoration: BoxDecoration(color: palette.card),
       child: Row(
         children: [
           Expanded(
@@ -891,10 +888,7 @@ class _ComposePageState extends State<ComposePage> {
   Widget _buildBottomBar(AppPalette palette) {
     return Container(
       height: 48,
-      decoration: BoxDecoration(
-        color: palette.background,
-        border: Border(top: BorderSide(color: palette.divider, width: 1)),
-      ),
+      decoration: BoxDecoration(color: palette.background),
       child: ValueListenableBuilder<UndoHistoryValue>(
         valueListenable: _undo,
         builder: (context, value, _) => Row(
