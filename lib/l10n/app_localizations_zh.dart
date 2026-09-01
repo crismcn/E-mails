@@ -134,7 +134,44 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get composeAttachTodo => '附件功能待接入';
+  String composeAttachTooLarge(String limit) {
+    return '附件总大小超过 $limit，请删掉一些再发';
+  }
+
+  @override
+  String get composeAttachRemove => '移除附件';
+
+  @override
+  String composeAttachEmptyFile(String name) {
+    return '「$name」读不到内容，已跳过';
+  }
+
+  @override
+  String get composeContactPick => '选择联系人';
+
+  @override
+  String get composeContactPickEmail => '选择邮箱地址';
+
+  @override
+  String get composeContactNoEmail => '该联系人没有邮箱地址';
+
+  @override
+  String get composeContactDenied => '没有通讯录权限，无法选择联系人';
+
+  @override
+  String get composeAlignLeft => '左对齐';
+
+  @override
+  String get composeAlignCenter => '居中';
+
+  @override
+  String get composeAlignRight => '右对齐';
+
+  @override
+  String get composeIndentIncrease => '增加缩进';
+
+  @override
+  String get composeIndentDecrease => '减少缩进';
 
   @override
   String get loadMoreLoading => '加载中...';
@@ -170,6 +207,30 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get detailRecipient => '收件人：';
+
+  @override
+  String detailAttachmentCount(int count) {
+    return '$count 个附件';
+  }
+
+  @override
+  String get detailAttachmentOpen => '打开';
+
+  @override
+  String get detailAttachmentDownload => '下载';
+
+  @override
+  String detailAttachmentSaved(String name) {
+    return '已保存 $name';
+  }
+
+  @override
+  String get detailAttachmentOpenFallback => '手机上没有能打开它的应用，改为下载';
+
+  @override
+  String detailAttachmentFailed(String message) {
+    return '附件获取失败：$message';
+  }
 
   @override
   String get actionReply => '回复';
@@ -307,7 +368,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get actionHealthCheck => '健康检测';
 
   @override
+  String get actionElevate => '提权';
+
+  @override
   String get actionSelectAll => '全选';
+
+  @override
+  String get accountElevateTodo => '提权功能尚未实现';
 
   @override
   String get accountChecking => '检查中…';

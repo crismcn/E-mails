@@ -15,10 +15,10 @@ class TokenService {
     required TokenStore tokenStore,
     required CredentialsStore credentialsStore,
     DateTime Function()? now,
-  })  : _authApi = authApi,
-        _tokenStore = tokenStore,
-        _credentialsStore = credentialsStore,
-        _now = now ?? DateTime.now;
+  }) : _authApi = authApi,
+       _tokenStore = tokenStore,
+       _credentialsStore = credentialsStore,
+       _now = now ?? DateTime.now;
 
   // ignore_for_file: prefer_initializing_formals
   // 依赖用具名参数注入、字段私有，此处初始化列表比具名初始化形参更清晰。
@@ -83,8 +83,7 @@ class TokenService {
     }
 
     final token = result.data!;
-    final expiresAt =
-        _now().toUtc().add(Duration(seconds: token.expiresIn));
+    final expiresAt = _now().toUtc().add(Duration(seconds: token.expiresIn));
     _tokenStore.write(
       email,
       TokenEntry(accessToken: token.accessToken, expiresAt: expiresAt),
@@ -92,8 +91,12 @@ class TokenService {
 
     // 微软轮换了 refresh_token → 回写，避免旧值失效后再也换不到 token。
     final rotated = token.refreshToken;
-    if (rotated != null && rotated.isNotEmpty && rotated != credentials.refreshToken) {
-      await _credentialsStore.update(credentials.copyWith(refreshToken: rotated));
+    if (rotated != null &&
+        rotated.isNotEmpty &&
+        rotated != credentials.refreshToken) {
+      await _credentialsStore.update(
+        credentials.copyWith(refreshToken: rotated),
+      );
     }
 
     return token.accessToken;

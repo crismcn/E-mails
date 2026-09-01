@@ -154,10 +154,7 @@ class HealthService {
 
   /// 按检测结论落盘状态：凭据失效→tokenExpired；网络/未知→保持原状态
   /// （只写回可能已轮换的 [credentials]，避免抖动误标）。
-  Future<void> _persist(
-    AccountCredentials credentials,
-    HealthStatus status,
-  ) {
+  Future<void> _persist(AccountCredentials credentials, HealthStatus status) {
     if (status == HealthStatus.credentialsInvalid) {
       return _credentialsStore.update(
         credentials.copyWith(status: AccountCredentials.statusTokenExpired),

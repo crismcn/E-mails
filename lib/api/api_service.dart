@@ -53,7 +53,8 @@ class ApiService {
   }) {
     final tokens = tokenStore ?? InMemoryTokenStore();
     // 默认用安全存储持久化凭据；测试可注入 InMemoryCredentialsStore。
-    final creds = credentialsStore ??
+    final creds =
+        credentialsStore ??
         SecureCredentialsStore(secureStorage ?? FlutterSecureStorageAdapter());
 
     // OAuth 客户端 → AuthApi。
@@ -67,13 +68,15 @@ class ApiService {
     );
 
     // 鉴权拦截器 → Graph 客户端 → MailApi。
-    final graphDio =
-        DioClientFactory.buildGraphDio(AuthInterceptor(tokenService));
+    final graphDio = DioClientFactory.buildGraphDio(
+      AuthInterceptor(tokenService),
+    );
     // 可注入 MailApi（测试假实现）；默认装配真实 Graph 客户端。
     final mail = mailApi ?? MailApi(ApiClient(graphDio));
 
     // 健康检测：走裸 Graph 客户端（自带 Bearer），不复用邮件 token 缓存。
-    final health = healthService ??
+    final health =
+        healthService ??
         HealthService(
           authApi: authApi,
           userApi: UserApi(ApiClient(DioClientFactory.buildPlainGraphDio())),

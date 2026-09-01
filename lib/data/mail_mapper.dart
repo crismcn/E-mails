@@ -69,7 +69,9 @@ MailMessage mailMessageFromGraph(GraphMessage message, {DateTime? now}) {
   return MailMessage(
     id: message.id,
     sender: _sender(message),
-    time: received == null ? '' : formatMailTime(received, now ?? DateTime.now()),
+    time: received == null
+        ? ''
+        : formatMailTime(received, now ?? DateTime.now()),
     body: message.bodyPreview,
     unread: !message.isRead,
     recipient: message.toRecipients.join('; '),
@@ -130,3 +132,62 @@ String _sender(GraphMessage m) {
 /// 第二行：主题；主题为空（不少通知类邮件如此）时退回正文摘要。
 String _subject(GraphMessage m) =>
     m.subject.isNotEmpty ? m.subject : m.bodyPreview;
+
+/// 字节数 → 附件条上的可读大小（`44B` / `3.72KB` / `1.20MB`）。
+///
+/// KB / MB 保留两位小数、B 不带小数 —— 与「邮件详情-附件信息.jpg」的字样一致。
+String formatFileSize(int bytes) {
+  if (bytes < 0) return '0B';
+  if (bytes < 1024) return '${bytes}B';
+  if (bytes < 1024 * 1024) {
+    return '${(bytes / 1024).toStringAsFixed(2)}KB';
+  }
+  return '${(bytes / (1024 * 1024)).toStringAsFixed(2)}MB';
+}
+
+/// 容器标签 —— 只有这些标签上的显式宽度才算「邮件的设计宽度」。
+///
+/// 刻意**不含 `img`**：高清横幅常写 `width="1200"` 再用 CSS 缩到 100%，
+/// 把它算进来会让整封邮件被缩到看不清。图片超宽由 `max-width:100%` 单独夹住。
+final RegExp _kContainerTag = RegExp(
+  r'<(?:table|tbody|tr|td|th|div|center|body|section)\b([^>]*)>',
+  caseSensitive: false,
+);
+
+/// `width="600"` / `width=600` —— 前面必须是标签内的空白，避免命中 `data-width=`；
+/// 数字必须整段取完（`(?![\d.])`，否则 `100%` 会退化匹配成 `10`），
+/// 紧跟 `%` 的是响应式写法，不算设计宽度。
+final RegExp _kWidthAttr = RegExp(
+  '''(?:^|\\s)width\\s*=\\s*["']?\\s*(\\d+(?:\\.\\d+)?)(?![\\d.])\\s*(?:px)?(?!\\s*%)["']?''',
+  caseSensitive: false,
+);
+
+/// 内联样式里的 `width:600px` / `min-width:600px`（百分比不算）。
+final RegExp _kWidthCss = RegExp(
+  r'(?:min-)?width\s*:\s*(\d+(?:\.\d+)?)\s*px',
+  caseSensitive: false,
+);
+
+/// 推断 HTML 的「设计宽度」（逻辑像素）—— 供详情页把超宽邮件整体缩放到屏幕宽。
+///
+/// 非响应式邮件几乎都会在最外层写死宽度（`<table width="600">` 或
+/// `style="width:600px"`），拿到这个数就能算出缩放比，不必让用户左右滑。
+/// 返回 0 表示没有写死宽度（正常自适应渲染即可）。
+///
+/// [cap] 是上限：个别邮件会出现离谱的声明宽度，缩放比过小反而没法读，
+/// 超过上限就按上限算（余下部分仍会被夹住）。
+double htmlDeclaredWidth(String html, {double cap = 1600}) {
+  var maxWidth = 0.0;
+  for (final tag in _kContainerTag.allMatches(html)) {
+    final attrs = tag.group(1) ?? '';
+    for (final m in _kWidthAttr.allMatches(attrs)) {
+      final v = double.tryParse(m.group(1)!) ?? 0;
+      if (v > maxWidth) maxWidth = v;
+    }
+    for (final m in _kWidthCss.allMatches(attrs)) {
+      final v = double.tryParse(m.group(1)!) ?? 0;
+      if (v > maxWidth) maxWidth = v;
+    }
+  }
+  return maxWidth > cap ? cap : maxWidth;
+}

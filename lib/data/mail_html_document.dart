@@ -1,0 +1,169 @@
+import 'dart:math';
+
+import 'mail_mapper.dart' show htmlDeclaredWidth;
+
+/// 正文高度回报用的 JS 通道名 —— WebView 侧 `MailHeight.postMessage(高度)`。
+const String kMailHeightChannel = 'MailHeight';
+
+/// 正文外层包一层自己的容器 —— 量高度以它为准，不受邮件给 `body` 的
+/// `height:100%` / `overflow:hidden` 影响。
+const String kMailRootId = 'mail-root';
+
+/// 邮件正文渲染成的一整份 HTML 文档（含视口、CSP、注入样式与量高脚本）。
+class MailHtmlDocument {
+  const MailHtmlDocument({required this.html, required this.layoutScale});
+
+  /// 交给 `WebViewController.loadHtmlString` 的完整文档。
+  final String html;
+
+  /// 排版宽度到屏幕宽度的缩放比（≤1）。
+  ///
+  /// 非响应式邮件（写死 `<table width="600">`）按 600 的「虚拟视口」排版、由浏览器
+  /// 整体缩到屏宽，于是 JS 量到的 CSS 像素高度要乘这个比例才是**实际占屏高度**。
+  final double layoutScale;
+}
+
+/// `<script>` 整块 —— CSP 已禁脚本，这里再物理删一遍（多一层，不指望正则万无一失）。
+final RegExp _kScriptBlock = RegExp(
+  r'<script\b[^>]*>[\s\S]*?</script\s*>|<script\b[^>]*/?>',
+  caseSensitive: false,
+);
+
+/// 允许点开的链接协议 —— 邮件里的 `javascript:` / 自定义 scheme 一律不往外抛。
+const Set<String> kMailLinkSchemes = {'http', 'https', 'mailto', 'tel'};
+
+/// 这个 URL 能不能交给系统浏览器 / 邮件 App 打开。
+bool isSafeMailLink(String url) {
+  final uri = Uri.tryParse(url.trim());
+  if (uri == null || !uri.hasScheme) return false;
+  return kMailLinkSchemes.contains(uri.scheme.toLowerCase());
+}
+
+/// 把邮件正文 HTML 包成一份可安全渲染的完整文档。
+///
+/// 安全姿态（正文是**发件人可控**的内容，按敌意输入对待）：
+/// - `<meta http-equiv="Content-Security-Policy">` 只放开图片 / 内联样式 / 字体，
+///   脚本仅允许带 [nonce] 的那一段（也就是下面量高度用的那几行）。邮件自带的
+///   `<script>`、内联 `onclick=`、`<iframe>`、表单提交、`<base>` 全部被挡。
+///   多份 CSP 是**取交集**执行的，正文里再塞一份宽松策略也放不开。
+/// - [nonce] 必须每份文档随机重生成：固定值等于把白名单告诉发件人。
+/// - 另外物理删掉 `<script>` 整块，作为 CSP 之外的第二道。
+/// - 远程图片照旧会加载（和换 WebView 之前一样），也就是跟踪像素照旧能打点；
+///   要拦得改成「点按钮才显示图片」，那是另一个功能。
+///
+/// 排版：
+/// - 声明宽度（[htmlDeclaredWidth]）超过 [viewportWidth] 时，视口按声明宽度铺开，
+///   由浏览器整体缩到屏宽 —— 文字是引擎重绘的，比 Flutter 侧等比缩小清晰。
+/// - 不写 `user-scalable=no`，双指缩放可用。
+/// - 长串不可断的 URL 靠 `overflow-wrap: anywhere` 折行，不再撑出横条。
+///
+/// 配色：[dark] 时整份文档做反色（`invert` + `hue-rotate`），图片再反一次抵消 ——
+/// 邮件都是按白底黑字写的，这样能在不猜发件人配色的前提下保证文字始终可读，
+/// 版式与对比关系也留着（纯粹强制文字色会把按钮 / 底色块压平）。
+MailHtmlDocument buildMailHtmlDocument(
+  String body, {
+  required String nonce,
+  required double viewportWidth,
+  required bool dark,
+  required String backgroundHex,
+}) {
+  final declared = htmlDeclaredWidth(body);
+  final wide = declared > viewportWidth && viewportWidth > 0;
+  final viewport = wide
+      ? 'width=${declared.round()}'
+      : 'width=device-width, initial-scale=1';
+  // 反色后要落在 App 底色上，那页面底色就得先取它的反色。
+  final pageBackground = dark ? _invertHex(backgroundHex) : '#ffffff';
+
+  return MailHtmlDocument(
+    layoutScale: wide ? viewportWidth / declared : 1,
+    html:
+        '<!DOCTYPE html><html><head>'
+        '<meta charset="utf-8">'
+        '<meta http-equiv="Content-Security-Policy" content="'
+        "default-src 'none'; "
+        'img-src * data: blob:; '
+        "style-src 'unsafe-inline'; "
+        'font-src * data:; '
+        'media-src * data:; '
+        "script-src 'nonce-$nonce'; "
+        "frame-src 'none'; object-src 'none'; "
+        "form-action 'none'; base-uri 'none'"
+        '">'
+        '<meta name="viewport" content="$viewport">'
+        '<style>${_style(dark: dark, background: pageBackground)}</style>'
+        '</head><body>'
+        '<div id="$kMailRootId">${body.replaceAll(_kScriptBlock, '')}</div>'
+        '<script nonce="$nonce">${_heightProbe()}</script>'
+        '</body></html>',
+  );
+}
+
+/// 生成一次性 nonce —— 走 [Random.secure]，发件人猜不到就没法让自己的脚本过 CSP。
+String mailHtmlNonce() {
+  final rnd = Random.secure();
+  return List<String>.generate(
+    16,
+    (_) => rnd.nextInt(16).toRadixString(16),
+  ).join();
+}
+
+String _style({required bool dark, required String background}) =>
+    ':root{color-scheme:light}'
+    'html{background:$background;-webkit-text-size-adjust:100%}'
+    'body{margin:0;padding:12px 16px;color:#111;'
+    'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;'
+    'font-size:16px;line-height:1.55;overflow-wrap:anywhere}'
+    // 不少邮件给 html/body 写 `height:100%` 或 `overflow:hidden`（原本是给
+    // 桌面客户端的整页布局用的），照办的话正文会被压成一屏高、后面全没了。
+    // `!important` 压得住邮件里后写的普通声明。
+    'html,body{height:auto!important;max-height:none!important;'
+    'overflow:visible!important}'
+    '#$kMailRootId{height:auto!important;max-height:none!important;'
+    'overflow:visible!important}'
+    // 超宽图片仍夹回容器内（宽度推断刻意忽略 img，见 htmlDeclaredWidth）。
+    'img{max-width:100%;height:auto}'
+    'table{max-width:100%}'
+    'pre{white-space:pre-wrap}'
+    '${dark ? _kDarkFilter : ''}';
+
+/// 反色一遍全文，图片 / 视频再反回来 —— 照片和 logo 的颜色才是对的。
+///
+/// 已知取舍：白底 logo 反两次仍是白底（暗页面上一块白），元素的
+/// `background-image` 没法单独反回来（会连带子节点），深底设计的邮件会被反成亮底。
+const String _kDarkFilter =
+    'html{filter:invert(1) hue-rotate(180deg)}'
+    'img,video,picture,svg,canvas{filter:invert(1) hue-rotate(180deg)}';
+
+/// 量正文高度并回报 —— 图片是后到的，故用 `ResizeObserver` 持续跟。
+///
+/// 取几种量法的**最大值**：邮件可能给 `body` 写死高度、可能整封浮动（父元素高度塌成
+/// 0）、也可能被 `overflow` 裁掉。少量一种就会把长邮件截断，宁可多算一点空白。
+String _heightProbe() =>
+    '(function(){var last=-1;'
+    'function measure(){var r=document.getElementById("$kMailRootId");'
+    'var d=document.documentElement;var b=document.body;var h=0;'
+    'if(r){h=Math.max(h,r.scrollHeight,r.getBoundingClientRect().bottom);}'
+    'if(b){h=Math.max(h,b.scrollHeight);}'
+    'if(d){h=Math.max(h,d.scrollHeight);}'
+    'return Math.ceil(h);}'
+    'function report(){var h=measure();if(h<=0||h===last){return;}last=h;'
+    '$kMailHeightChannel.postMessage(String(h));}'
+    'report();window.addEventListener("load",report);'
+    'if(window.ResizeObserver){var ro=new ResizeObserver(report);'
+    'ro.observe(document.documentElement);'
+    'var r=document.getElementById("$kMailRootId");if(r){ro.observe(r);}}'
+    // 图片没有 load 事件冒泡到 window 的保障（缓存命中时可能早于监听），
+    // 再补几拍轮询兜底。
+    'var n=0;var t=setInterval(function(){report();if(++n>10){'
+    'clearInterval(t);}},300);})();';
+
+/// `#RRGGBB` 按通道取反 —— 给反色滤镜准备「反过来正好是 App 底色」的页面底色。
+String _invertHex(String hex) {
+  final v = hex.replaceFirst('#', '');
+  if (v.length != 6) return '#ffffff';
+  final n = int.tryParse(v, radix: 16);
+  if (n == null) return '#ffffff';
+  final inverted = 0xFFFFFF - n;
+  return '#${inverted.toRadixString(16).padLeft(6, '0')}';
+}

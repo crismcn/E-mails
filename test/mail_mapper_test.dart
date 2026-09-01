@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:email_manager/api/mail_api.dart';
 import 'package:email_manager/data/mail_mapper.dart';
 
 import 'fake_mail_api.dart';
@@ -183,6 +184,78 @@ void main() {
       final base = mailMessageFromGraph(fakeGraphMessage(id: 'x'));
       final merged = applyBody(base, fakeGraphMessage(id: 'x'));
       expect(identical(merged, base), isTrue);
+    });
+  });
+
+  group('htmlDeclaredWidth', () {
+    test('容器上写死的像素宽度 → 取最大值', () {
+      expect(
+        htmlDeclaredWidth('<table width="600"><tr><td>x</td></tr></table>'),
+        600,
+      );
+      expect(htmlDeclaredWidth('<div style="width:640px">x</div>'), 640);
+      expect(htmlDeclaredWidth('<div style="min-width: 720px">x</div>'), 720);
+      // 多个声明取最宽的那个。
+      expect(
+        htmlDeclaredWidth(
+          '<div style="width:320px"><table width="600"></table></div>',
+        ),
+        600,
+      );
+    });
+
+    test('响应式写法与图片宽度不算 → 0', () {
+      expect(htmlDeclaredWidth('<div style="width:100%"><p>正文</p></div>'), 0);
+      expect(htmlDeclaredWidth('<table width="100%"></table>'), 0);
+      // 高清横幅常写 width="1200" 再用 CSS 缩回去，不能让它决定缩放比。
+      expect(htmlDeclaredWidth('<p><img src="a.png" width="1200"></p>'), 0);
+      // data-width 之类的自定义属性不是宽度。
+      expect(htmlDeclaredWidth('<div data-width="900">x</div>'), 0);
+      expect(htmlDeclaredWidth(''), 0);
+    });
+
+    test('离谱的声明宽度按上限截断', () {
+      expect(htmlDeclaredWidth('<table width="5000"></table>'), 1600);
+      expect(htmlDeclaredWidth('<table width="5000"></table>', cap: 900), 900);
+    });
+  });
+
+  group('formatFileSize', () {
+    test('不足 1KB 用字节、不带小数', () {
+      expect(formatFileSize(0), '0B');
+      expect(formatFileSize(44), '44B');
+      expect(formatFileSize(1023), '1023B');
+    });
+
+    test('KB / MB 保留两位小数（与附件条设计稿一致）', () {
+      expect(formatFileSize(1024), '1.00KB');
+      expect(formatFileSize(3810), '3.72KB');
+      expect(formatFileSize(1024 * 1024), '1.00MB');
+      expect(formatFileSize(3 * 1024 * 1024), '3.00MB');
+    });
+  });
+
+  group('GraphAttachment', () {
+    test('解析 Graph 附件字段，缺省值兜底', () {
+      final a = GraphAttachment.fromJson(const <String, dynamic>{
+        'id': 'a1',
+        'name': '58.png',
+        'contentType': 'image/png',
+        'size': 3810,
+        'isInline': true,
+      });
+      expect(a.id, 'a1');
+      expect(a.size, 3810);
+      expect(a.isInline, isTrue);
+      expect(a.isImage, isTrue);
+      expect(a.extensionLabel, 'PNG');
+
+      final empty = GraphAttachment.fromJson(const <String, dynamic>{});
+      expect(empty.size, 0);
+      expect(empty.isInline, isFalse);
+      expect(empty.isImage, isFalse);
+      // 无扩展名 → 角标退回 '?'。
+      expect(empty.extensionLabel, '?');
     });
   });
 }

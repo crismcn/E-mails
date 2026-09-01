@@ -43,7 +43,7 @@
 | 首页 / 账号总览 | `lib/pages/home_page.dart` | 三统计卡 + 账号列表；吸顶头部（标题上滑被汇总覆盖后固定）；长按进多选，底部操作栏（健康检测 / 删除 / 全选）；右上角「…」菜单 → 导入 / 设置 |
 | 导入邮箱 | `lib/pages/import_page.dart` | CSV 文件导入 + 文本粘贴导入；格式说明卡；底部「确认导入」落安全存储 |
 | 邮件列表 | `lib/pages/mail_list_page.dart` | 某账号的 Graph 真实收件箱；下拉刷新 / 上滑翻页（`$skip`）；左滑归档 / 已读 / 删除；点击进详情并自动标已读 |
-| 邮件详情 | `lib/pages/message_detail_page.dart` | 单封邮件；懒取全文；HTML 富文本渲染（非 HTML 走纯文本）；收件人 / 完整日期 |
+| 邮件详情 | `lib/pages/message_detail_page.dart` | 单封邮件；懒取全文；**HTML 正文交给系统 WebView 渲染**（`MailHtmlView`，非 HTML 仍走 Flutter 纯文本）；上滑收起顶部标题栏 + 底部操作栏（两条都是 `Stack` 里的**绝对定位浮层**，各自套 `ClipRect` 后靠 `SlideTransition` 滑出屏幕外沿；滚动视图恒定铺满整屏、内边距不变，故收放不改 `maxScrollExtent`、正文不跳位。下滑或贴顶即切回）；收件人 / 完整日期；附件条（收起显示「N 个附件 + 总大小」，展开出图片预览与文件行，点击交给系统应用打开、打不开转下载） |
 | 设置 | `lib/pages/settings_page.dart` | 主题（跟随系统 / 暗黑 / 亮白）+ 语言（中文 / English），分段控件切换，即时持久化 |
 
 > 设计稿（仓库根）：`邮件列表.jpg`、`邮件列表消息.jpg`、`邮件详情.jpg`、`长按操作.jpg`。新页面要求 **1:1 还原设计稿**。
@@ -60,22 +60,30 @@
 - 状态色：有效（绿）/ 警告·token 过期（黄）/ 错误·密码错误（红）/ 未知（中性灰）。
 - **新增组件一律用 `context.palette`，不要引入固定颜色常量类。**
 
-### 4.2 字号与间距（2026-08-27 收紧后的尺度）
+### 4.2 图标
+- **页面不直接写 `Icons.xxx`**，统一走 `lib/theme/app_icons.dart` 的语义常量（`AppIcons.back` / `AppIcons.starFilled` …）。换整套图标只动这一个文件。
+- 主来源是 **iconfont**（阿里图标库，项目「Outlooks」id `5228387`）：字库 `assets/fonts/iconfont.ttf`，码点抄自同目录 `iconfont.json`，pubspec 里声明为家族 `IconFont`。加图标的流程：iconfont 项目里挑好 → 重新下载覆盖 ttf + json → 按 `font_class` 在 `app_icons.dart` 补常量。
+- 还没挑到的图标暂时回退 Material（`app_icons.dart` 的「待补」区），补齐时页面代码不用动。
+- 常量必须是 **`const IconData`**，release 的 `--tree-shake-icons` 才能把字库裁到只剩用到的字形。
+- `uses-material-design: true` **不能关**：Material 组件内部自己画的图标（DropdownButton 箭头、TextField 清除、Slidable 等）仍取 MaterialIcons 字体。
+- iconfont 字形的字面尺寸不统一（有的填满 1.0em，有的只有 0.56em），跟 Material 的 0.83em 混排时同一个 `size:` 观感会不一致，必要时按调用点微调 `size`。
+
+### 4.3 字号与间距（2026-08-27 收紧后的尺度）
 - 首页标题 22、统计卡数字 24 / 标签 12、列表主文本 16、次要文本 14、小字 12、搜索框 14。
 - 首页吸顶头部三段高度 62 / 66 / 42；多选顶栏高度常量 `_kSelTopBarHeight` 必须 == 标题条 `_titleBand`（62），二者靠此抵消保证进出多选净高不跳。
 
-### 4.3 滚动手感（约定：轻微且迅速的回弹）
+### 4.4 滚动手感（约定：轻微且迅速的回弹）
 - 全局 `lib/theme/app_scroll_behavior.dart` 的 `SmallBounceScrollBehavior`（挂 `MaterialApp.scrollBehavior`），物理 `_SnappyBouncePhysics`：小幅过冲 + 干脆收口（比 iOS 默认更硬）。
 - 两个可复用常量：`snappyFrictionFactor(f)=0.4*(1-f)^2`（越小越硬）、`kSnappySpring`（临界阻尼、不来回晃）。
 - **坑**：`MaterialApp.scrollBehavior` 管不到 `EasyRefresh` 内部。用 `EasyRefresh` 的页面（首页 / 邮件列表）必须显式传 `spring: kSnappySpring, frictionFactor: snappyFrictionFactor`。
 - 不要 Android 边缘发光 / 拉伸，只要位移回弹。回归测试 `test/scroll_bounce_test.dart`。
 
-### 4.4 多语言（i18n）
+### 4.5 多语言（i18n）
 - 官方 gen-l10n。配置 `l10n.yaml`（arb-dir/output-dir 均 `lib/l10n`，template = `app_zh.arb`，`nullable-getter: false`）。
 - 文案写在 `lib/l10n/app_zh.arb` / `app_en.arb`，**改文案后跑 `flutter gen-l10n` 重新生成** `AppLocalizations`。
 - 取文案：`AppLocalizations.of(context).xxx`。语言标签「中文」「English」按惯例各显本名、不本地化。
 
-### 4.5 EasyRefresh 指示器约定
+### 4.6 EasyRefresh 指示器约定
 - 共用指示器在 `lib/widgets/app_refresh.dart`。两条硬约束：
   1. **收起时整体不入树**：`build` 开头 `if (state.offset <= 0) return const SizedBox.shrink();`，否则 `CupertinoActivityIndicator` 常驻空转 → 所有 `pumpAndSettle` 超时。
   2. **`processedDuration` 是一次性 Timer**：测试触发刷新 / 加载后需额外 `await tester.pump(const Duration(milliseconds: 400))`，否则报「Timer still pending」。
@@ -115,6 +123,37 @@ UI 页面 (pages / widgets)
 - `account_import.dart` `parseImportText`：逐行按 `----` 拆分（回退逗号 / CSV），字段 `邮箱----密码----client_id----refresh_token----创建时间`，≥5 字段且首字段合法邮箱才有效。
 - `mail_mapper.dart`：`mailPreviewFromGraph` / `mailMessageFromGraph` / `formatMailTime`（今天 `HH:mm`、今年 `M/D`、更早 `YYYY/M/D`，**UTC→本地再比日期**）等。
 
+### 5.5 邮件正文渲染（WebView）
+
+HTML 正文交给**系统 WebView**（`webview_flutter`，iOS WKWebView / Android WebView）。曾用
+`flutter_widget_from_html_core` 画成原生 widget，排版还原度不够（表格、定位、webfont），已换掉。
+
+- **包装文档是纯函数**：`lib/data/mail_html_document.dart` 的 `buildMailHtmlDocument`
+  把正文包成一整份 HTML（视口 + CSP + 注入样式 + 量高脚本），可单测；`lib/widgets/mail_html_view.dart`
+  只管 WebView 生命周期。
+- **正文是发件人可控的敌意输入**，安全姿态写死在那份文档里：CSP `default-src 'none'`，只放开
+  图片 / 内联样式 / 字体；脚本仅允许带**每份随机 nonce** 的那一段（量高度用），邮件自带
+  `<script>`、内联 `onclick`、`<iframe>`、表单提交、`<base>` 全被挡；`<script>` 整块另外物理删一遍。
+  链接一律不在 WebView 内导航，只把 `http/https/mailto/tel` 交给外部浏览器（`isSafeMailLink`）。
+  **远程图片照旧加载**（跟踪像素照旧能打点），要拦得做成「点按钮才显示图片」。
+- **高度**：WebView 自己不滚，由页内脚本回报高度、组件按该高度占位，整页仍是一条滚动条。
+  量高度取 `#mail-root` / `body` / `documentElement` 三种量法的**最大值**并持续跟进
+  （`ResizeObserver` + 10 拍轮询），`onPageFinished` 后宿主侧再隔几拍量几次兜底。
+  少量一种就会截断长邮件，宁可多留一点空白。另外用 `!important` 压掉邮件写给 `html/body`
+  的 `height:100%` / `overflow:hidden`（那是给桌面客户端整页布局用的，照办会压成一屏高）。
+- **宽度**：`htmlDeclaredWidth` 推断出的声明宽度超过屏宽时，视口写成 `width=<声明宽度>`，
+  由浏览器整体缩到屏宽（引擎重绘，比 Flutter 侧 `FittedBox` 压扁清晰）。双指缩放开着。
+  **坑：`webview_flutter_android` 默认 `useWideViewPort = false`，会忽略 `viewport` meta** ——
+  于是按屏宽排版、不缩放，而 Flutter 侧又按声明宽度算了缩放比，长邮件被截掉一半。
+  必须显式 `AndroidWebViewController.setUseWideViewPort(true)`（故直接依赖了
+  `webview_flutter_android`）。iOS 的 WKWebView 原生就认 viewport meta。
+- **暗色**：邮件都按白底黑字写，故暗色主题下整份文档 `filter: invert(1) hue-rotate(180deg)`，
+  图片再反一次抵消。已知取舍：白底 logo 仍是白块、元素的 `background-image` 会被反色、
+  深底设计的邮件会被反成亮底。要改姿态只动 `_kDarkFilter` 一处。
+- **测试**：widget 测试环境没有平台视图，`MailHtmlView` 检测到 `WebViewPlatform.instance == null`
+  就降级成 `MailHtmlUnavailable`（挂着生成好的文档供断言）。所以**HTML 正文在测试里高度为 0**，
+  要撑滚动距离的用例（如上滑收起标题栏）必须用纯文本长邮件。
+
 ---
 
 ## 6. 微软集成关键约束（务必牢记）
@@ -141,11 +180,11 @@ lib/
     network/                dio 封装、统一契约、错误映射、拦截器
     auth/                   token_store / token_service / credentials_store / health_service
     storage/                secure_storage 抽象
-  data/                     account_import / mail_mapper（纯函数）/ mock_mails
+  data/                     account_import / mail_mapper（纯函数）/ mail_html_document / mock_mails
   models/                   account.dart / mail.dart
   pages/                    home / import / mail_list / message_detail / settings
-  widgets/                  stat_card / account_tile / mail_tile / app_refresh / segmented_selector
-  theme/                    app_palette / app_theme / app_scroll_behavior / app_page_route
+  widgets/                  stat_card / account_tile / mail_tile / app_refresh / segmented_selector / mail_html_view
+  theme/                    app_palette / app_icons / app_theme / app_scroll_behavior / app_page_route
   settings/                 settings_controller（ChangeNotifier + shared_preferences）
   l10n/                     app_zh.arb / app_en.arb + 生成的 AppLocalizations
 test/                       单元 + widget 测试（详见 §9）
@@ -158,7 +197,9 @@ api-test/                   Node 换 token 脚本（gitignore，不入库）
 
 - **Flutter 3.47 / Dart SDK ^3.13**，目标平台 iOS + Android。
 - 状态：轻量自建（`ChangeNotifier` + `InheritedWidget`/`InheritedNotifier`），**未引入 Riverpod / Bloc**（历史上评估过 Riverpod 3，当前工程未用）。
-- 关键依赖：`dio ^5.11`、`flutter_secure_storage ^11`、`shared_preferences ^2.3`、`file_picker ^12`（v12 用**静态方法** `FilePicker.pickFile`）、`flutter_slidable ^4`、`easy_refresh ^3.5`、`flutter_widget_from_html_core ^0.17`、`url_launcher ^6.3`、`intl`、`flutter_localizations`。
+- 关键依赖：`dio ^5.11`、`flutter_secure_storage ^11`、`shared_preferences ^2.3`、`file_picker ^12`（v12 用**静态方法** `FilePicker.pickFile` / `pickFiles` / `saveFile`）、`flutter_slidable ^4`、`easy_refresh ^3.5`、`webview_flutter ^4.14`（邮件正文渲染，见 §5.5）、`url_launcher ^6.3`、`path_provider ^2.1` + `open_filex ^4.7`（附件写临时文件后交系统应用打开）、`intl`、`flutter_localizations`。
+- **iOS**：`Info.plist` 已补 `NSPhotoLibraryUsageDescription`（新建邮件选图要用相册，缺了会崩）、`NSContactsUsageDescription`（选联系人；系统选择器本身免权限，补上防审核问询）。
+- 通讯录：`flutter_contacts ^2.3.1`，只用系统选择器 `FlutterContacts.native.showPicker(properties: {email})`。**要拿到邮箱地址 Android 必须有 `READ_CONTACTS`**（无权限插件抛 `PlatformException`），故 manifest 里声明 + 调用前运行时申请；iOS 免权限。选人这一步抽成 `ContactEmailPicker`（`lib/core/contacts/contact_picker.dart`）便于测试注入。
 - 图标：`flutter_launcher_icons`（`dart run flutter_launcher_icons` 从 logo 生成）。
 - **Android**：`compileSdk` 显式 37（flutter_secure_storage 11 要求）；main manifest 已补 `INTERNET` 权限。
 
@@ -176,7 +217,7 @@ api-test/                   Node 换 token 脚本（gitignore，不入库）
 - 网络相关用**依赖注入假实现**，不打真网：`ApiService.create(mailApi:, healthService:, credentialsStore:)` 全部可注入。
 - `test/fake_mail_api.dart` 的 `FakeMailApi`（继承真 `MailApi` 覆盖方法，`super(ApiClient(Dio()))`）；健康检测走真网的路径测试里用 `_FakeHealthService` 替换。
 - 假数据主题需含「蓝湖 / 蓝湖官方」等原文，既有断言按该文本定位。
-- EasyRefresh 触发后补 `pump(400ms)`（见 §4.5）。
+- EasyRefresh 触发后补 `pump(400ms)`（见 §4.6）。
 - 断言「不可见」注意：`find.text` 会命中 `Opacity(0)`/`ClipRect` 里仍在树中的文本；要么 `f==0` 时 `SizedBox.shrink()` 移出树，要么换断言方式。push 后上一路由 offstage，`find.text` 默认 `skipOffstage:true`。
 
 ### 9.3 环境坑

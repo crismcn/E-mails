@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:email_manager/theme/app_icons.dart';
 import 'package:email_manager/api/api_service.dart';
 import 'package:email_manager/api/auth_api.dart';
 import 'package:email_manager/api/user_api.dart';
@@ -72,9 +73,10 @@ void main() {
     await tester.longPress(find.text('alice@outlook.com'));
     await tester.pumpAndSettle();
 
-    // 顶部换成「已选择 1 项」，底部三个操作按钮出现。
+    // 顶部换成「已选择 1 项」，底部四个操作按钮出现。
     expect(find.text('已选择 1 项'), findsOneWidget);
     expect(find.text('健康检测'), findsOneWidget);
+    expect(find.text('提权'), findsOneWidget);
     expect(find.text('删除'), findsOneWidget);
     expect(find.text('全选'), findsOneWidget);
 
@@ -87,6 +89,21 @@ void main() {
     await tester.tap(find.text('全选'));
     await tester.pumpAndSettle();
     expect(find.text('已选择 3 项'), findsOneWidget);
+  });
+
+  testWidgets('点提权：仅提示尚未实现，保留多选态与账号状态', (WidgetTester tester) async {
+    await _pumpHome(tester);
+
+    await tester.longPress(find.text('alice@outlook.com'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('提权'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('提权功能尚未实现'), findsOneWidget);
+    // 不动凭据、不退出多选：选择态保持，列表 3 个账号一个不少。
+    expect(find.text('已选择 1 项'), findsOneWidget);
+    expect(find.text('alice@outlook.com'), findsOneWidget);
+    expect(find.text('tom@outlook.com'), findsOneWidget);
   });
 
   testWidgets('多选删除：二次确认后从列表移除', (WidgetTester tester) async {
@@ -116,7 +133,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('已选择 1 项'), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.close));
+    await tester.tap(find.byIcon(AppIcons.close));
     await tester.pumpAndSettle();
     expect(find.textContaining('已选择'), findsNothing);
     // 退出后恢复常态标题。

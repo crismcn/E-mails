@@ -6,6 +6,7 @@ import '../core/auth/health_service.dart';
 import '../l10n/app_localizations.dart';
 import '../models/account.dart';
 import '../theme/app_page_route.dart';
+import '../theme/app_icons.dart';
 import '../theme/app_palette.dart';
 import '../theme/app_scroll_behavior.dart';
 import '../widgets/account_tile.dart';
@@ -202,8 +203,9 @@ class _HomePageState extends State<HomePage>
           // 有效：顺带把 /me 拿到的显示名更新到内存（落盘已由服务负责）。
           _items[i] = _items[i].copyWith(
             status: AccountStatus.valid,
-            displayName:
-                (r.displayName?.isNotEmpty ?? false) ? r.displayName : null,
+            displayName: (r.displayName?.isNotEmpty ?? false)
+                ? r.displayName
+                : null,
           );
         } else if (r.isCredentialsInvalid) {
           // 仅凭据失效才改判；网络/服务端问题保留原状态，避免误标。
@@ -216,6 +218,17 @@ class _HomePageState extends State<HomePage>
     });
     _selCtrl.reverse();
     _toast(l10n.accountCheckSummary(ok, bad));
+  }
+
+  /// 批量提权（占位）—— 目标是给只授权了 `Mail.Read` 的账号补上写权限
+  /// （`Mail.ReadWrite` / `Mail.Send`）。
+  ///
+  /// 尚未实现:scope 在初始授权时锁死、个人 Outlook 被微软禁用 ROPC，
+  /// 无人值守提权只有「换 clientId 兑换」这条路可试（见 CLAUDE.md §6），
+  /// 方案未定前只弹提示，不动任何凭据、不改选中态。
+  void _elevateSelected() {
+    if (_selected.isEmpty) return;
+    _toast(AppLocalizations.of(context).accountElevateTodo);
   }
 
   /// 批量删除 —— 二次确认后从安全存储与列表移除。
@@ -377,6 +390,7 @@ class _HomePageState extends State<HomePage>
                                 hasSelection: _selected.isNotEmpty,
                                 allSelected: allSelected,
                                 onHealthCheck: _healthCheckSelected,
+                                onElevate: _elevateSelected,
                                 onDelete: _deleteSelected,
                                 onSelectAll: _toggleSelectAll,
                               ),
@@ -563,7 +577,7 @@ class _SelectionTopBar extends StatelessWidget {
         children: [
           IconButton(
             onPressed: onClose,
-            icon: Icon(Icons.close, color: palette.textPrimary, size: 22),
+            icon: Icon(AppIcons.close, color: palette.textPrimary, size: 22),
             splashRadius: 22,
             tooltip: l10n.commonCancel,
           ),
@@ -626,7 +640,7 @@ class _HeaderMenu extends StatelessWidget {
           height: 52,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
           child: _MenuRow(
-            icon: Icons.file_upload_outlined,
+            icon: AppIcons.importFile,
             label: l10n.menuImport,
             color: menuText,
           ),
@@ -637,7 +651,7 @@ class _HeaderMenu extends StatelessWidget {
           height: 52,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
           child: _MenuRow(
-            icon: Icons.settings_outlined,
+            icon: AppIcons.settings,
             label: l10n.menuSettings,
             color: menuText,
           ),
@@ -813,7 +827,7 @@ class _SearchBox extends StatelessWidget {
             hintText: l10n.searchHint,
             hintStyle: TextStyle(color: palette.textSecondary, fontSize: 14),
             prefixIcon: Icon(
-              Icons.search,
+              AppIcons.search,
               color: palette.textSecondary,
               size: 19,
             ),
@@ -841,7 +855,7 @@ class _SearchBox extends StatelessWidget {
   }
 }
 
-/// 多选态底部操作栏 —— 从底部滑起：健康检测 / 删除 / 全选。
+/// 多选态底部操作栏 —— 从底部滑起：健康检测 / 提权 / 删除 / 全选。
 ///
 /// 参照「长按操作.jpg」：浅色底、细顶边，图标在上、小字标签在下。
 class _SelectionBar extends StatelessWidget {
@@ -849,14 +863,16 @@ class _SelectionBar extends StatelessWidget {
     required this.hasSelection,
     required this.allSelected,
     required this.onHealthCheck,
+    required this.onElevate,
     required this.onDelete,
     required this.onSelectAll,
   });
 
-  /// 是否有选中项 —— 无选中时健康检测/删除置灰不可点。
+  /// 是否有选中项 —— 无选中时健康检测/提权/删除置灰不可点。
   final bool hasSelection;
   final bool allSelected;
   final VoidCallback onHealthCheck;
+  final VoidCallback onElevate;
   final VoidCallback onDelete;
   final VoidCallback onSelectAll;
 
@@ -878,19 +894,25 @@ class _SelectionBar extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 _BarAction(
-                  icon: Icons.health_and_safety_outlined,
+                  icon: AppIcons.healthCheck,
                   label: l10n.actionHealthCheck,
                   enabled: hasSelection,
                   onPressed: onHealthCheck,
                 ),
                 _BarAction(
-                  icon: Icons.delete_outline,
+                  icon: AppIcons.elevate,
+                  label: l10n.actionElevate,
+                  enabled: hasSelection,
+                  onPressed: onElevate,
+                ),
+                _BarAction(
+                  icon: AppIcons.delete,
                   label: l10n.actionDelete,
                   enabled: hasSelection,
                   onPressed: onDelete,
                 ),
                 _BarAction(
-                  icon: allSelected ? Icons.deselect : Icons.select_all,
+                  icon: allSelected ? AppIcons.deselect : AppIcons.selectAll,
                   label: l10n.actionSelectAll,
                   enabled: true,
                   onPressed: onSelectAll,

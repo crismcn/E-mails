@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../models/account.dart';
 import '../models/mail.dart';
+import '../theme/app_icons.dart';
 import '../theme/app_palette.dart';
 
 /// 账号列表项 —— 风格与邮件列表一致：圆形头像（右下角状态点）+ 邮箱/未读 + 状态·协议。
@@ -170,7 +171,7 @@ class _SelectCircle extends StatelessWidget {
       ),
       child: selected
           ? const Icon(
-              Icons.check,
+              AppIcons.check,
               color: Colors.white,
               size: 16,
               fontWeight: FontWeight.w700,

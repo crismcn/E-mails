@@ -53,7 +53,24 @@
   "@composeInvalidRecipient": {
     "placeholders": { "value": { "type": "String" } }
   },
-  "composeAttachTodo": "附件功能待接入",
+  "composeAttachTooLarge": "附件总大小超过 {limit}，请删掉一些再发",
+  "@composeAttachTooLarge": {
+    "placeholders": { "limit": { "type": "String" } }
+  },
+  "composeAttachRemove": "移除附件",
+  "composeAttachEmptyFile": "「{name}」读不到内容，已跳过",
+  "@composeAttachEmptyFile": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "composeContactPick": "选择联系人",
+  "composeContactPickEmail": "选择邮箱地址",
+  "composeContactNoEmail": "该联系人没有邮箱地址",
+  "composeContactDenied": "没有通讯录权限，无法选择联系人",
+  "composeAlignLeft": "左对齐",
+  "composeAlignCenter": "居中",
+  "composeAlignRight": "右对齐",
+  "composeIndentIncrease": "增加缩进",
+  "composeIndentDecrease": "减少缩进",
   "loadMoreLoading": "加载中...",
   "loadMoreNoMore": "没有更多邮件",
   "menuImport": "导入",
@@ -68,6 +85,21 @@
   "threadLoadHistory": "下拉加载更多历史邮件",
   "threadLoadHistoryNoMore": "没有更多历史邮件",
   "detailRecipient": "收件人：",
+  "detailAttachmentCount": "{count} 个附件",
+  "@detailAttachmentCount": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "detailAttachmentOpen": "打开",
+  "detailAttachmentDownload": "下载",
+  "detailAttachmentSaved": "已保存 {name}",
+  "@detailAttachmentSaved": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "detailAttachmentOpenFallback": "手机上没有能打开它的应用，改为下载",
+  "detailAttachmentFailed": "附件获取失败：{message}",
+  "@detailAttachmentFailed": {
+    "placeholders": { "message": { "type": "String" } }
+  },
   "actionReply": "回复",
   "actionReplyAll": "全部回复",
   "actionForward": "转发",
@@ -122,7 +154,9 @@
     "placeholders": { "count": { "type": "int" } }
   },
   "actionHealthCheck": "健康检测",
+  "actionElevate": "提权",
   "actionSelectAll": "全选",
+  "accountElevateTodo": "提权功能尚未实现",
   "accountChecking": "检查中…",
   "accountCheckSummary": "检查完成：正常 {ok}，异常 {bad}",
   "@accountCheckSummary": {

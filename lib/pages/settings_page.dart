@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../settings/settings_controller.dart';
+import '../theme/app_icons.dart';
 import '../theme/app_palette.dart';
 import '../widgets/segmented_selector.dart';
 
@@ -49,8 +50,7 @@ class SettingsPage extends StatelessWidget {
                         l10n.settingsThemeLight,
                       ],
                       selectedIndex: themeIndex < 0 ? 0 : themeIndex,
-                      onChanged: (i) =>
-                          settings.setThemeMode(_themeOrder[i]),
+                      onChanged: (i) => settings.setThemeMode(_themeOrder[i]),
                     ),
                   ),
                   const SizedBox(height: 36),
@@ -90,8 +90,7 @@ class _Header extends StatelessWidget {
         children: [
           IconButton(
             onPressed: () => Navigator.of(context).maybePop(),
-            icon: Icon(Icons.arrow_back,
-                color: palette.textPrimary, size: 20),
+            icon: Icon(AppIcons.back, color: palette.textPrimary, size: 20),
             splashRadius: 22,
           ),
           const SizedBox(width: 4),

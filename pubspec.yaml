@@ -41,10 +41,17 @@ dependencies:
   file_picker: ^12.1.0
   flutter_slidable: ^4.0.3
   easy_refresh: ^3.5.1
-  flutter_widget_from_html_core: ^0.17.2
+  # 邮件正文 HTML 交给系统 WebView 渲染（WKWebView / Android WebView）。
+  # 直接依赖 android 实现是为了改 useWideViewPort（默认 false，会忽略 viewport meta）。
+  webview_flutter: ^4.14.1
+  webview_flutter_android: ^4.14.1
   url_launcher: ^6.3.2
+  # 附件：写临时文件（path_provider）+ 交给系统应用打开（open_filex）。
+  path_provider: ^2.1.5
+  open_filex: ^4.7.0
   dio: ^5.11.0
   flutter_secure_storage: ^11.0.0
+  flutter_contacts: ^2.3.1
 
 dev_dependencies:
   flutter_test:
@@ -84,6 +91,12 @@ flutter:
 
   # 启用 gen-l10n 本地化代码生成（arb → AppLocalizations）。
   generate: true
+
+  # iconfont（阿里图标库）字库 —— 码点常量见 lib/theme/app_icons.dart。
+  fonts:
+    - family: IconFont
+      fonts:
+        - asset: assets/fonts/iconfont.ttf
 
   # To add assets to your application, add an assets section, like this:
   # assets:

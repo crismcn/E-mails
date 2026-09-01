@@ -9,8 +9,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// 持久化：使用 [SharedPreferences]，每次切换即写盘，App 重启后恢复。
 class SettingsController extends ChangeNotifier {
   SettingsController(this._prefs)
-      : _themeMode = _readThemeMode(_prefs),
-        _locale = _readLocale(_prefs);
+    : _themeMode = _readThemeMode(_prefs),
+      _locale = _readLocale(_prefs);
 
   final SharedPreferences _prefs;
 
@@ -63,8 +63,7 @@ class SettingsScope extends InheritedNotifier<SettingsController> {
   }) : super(notifier: controller);
 
   static SettingsController of(BuildContext context) {
-    final scope =
-        context.dependOnInheritedWidgetOfExactType<SettingsScope>();
+    final scope = context.dependOnInheritedWidgetOfExactType<SettingsScope>();
     assert(scope != null, '未找到 SettingsScope，请在根部包裹。');
     return scope!.notifier!;
   }

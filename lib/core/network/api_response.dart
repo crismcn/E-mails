@@ -10,8 +10,8 @@ class ApiResponse<T> {
 
   /// 成功。
   const ApiResponse.success(T value, {this.message = 'ok'})
-      : code = ApiCode.ok,
-        data = value;
+    : code = ApiCode.ok,
+      data = value;
 
   /// 失败 —— 携带归一化后的业务码与提示。
   const ApiResponse.failure(this.code, this.message) : data = null;

@@ -173,7 +173,11 @@ void main() {
       // 刷新接口带延迟，制造并发窗口。
       final adapter = FakeAdapter(
         statusCode: 200,
-        body: {'access_token': 'AT', 'expires_in': 3600, 'refresh_token': 'RT2'},
+        body: {
+          'access_token': 'AT',
+          'expires_in': 3600,
+          'refresh_token': 'RT2',
+        },
         delay: const Duration(milliseconds: 50),
       );
       final authApi = AuthApi(ApiClient(_dioWith(adapter)));

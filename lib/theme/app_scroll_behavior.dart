@@ -14,12 +14,8 @@ double snappyFrictionFactor(double overscrollFraction) =>
 
 /// 回弹弹簧 —— iOS 默认 stiffness 100 / ratio 1.1（收尾偏拖沓）；
 /// 这里加硬到 180 并取临界阻尼 1.0，松手后一次收口、不来回晃，够「迅速」。
-final physics.SpringDescription kSnappySpring =
-    physics.SpringDescription.withDampingRatio(
-      mass: 0.5,
-      stiffness: 180,
-      ratio: 1.0,
-    );
+final physics.SpringDescription kSnappySpring = physics
+    .SpringDescription.withDampingRatio(mass: 0.5, stiffness: 180, ratio: 1.0);
 
 /// 全局滚动行为：边缘带「一点点、且迅速」的回弹。
 ///

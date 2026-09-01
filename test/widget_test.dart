@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:email_manager/theme/app_icons.dart';
 import 'package:email_manager/api/api_service.dart';
 import 'package:email_manager/core/auth/credentials_store.dart';
 import 'package:email_manager/main.dart';
@@ -51,8 +52,7 @@ Future<void> _pumpApp(
 }
 
 void main() {
-  testWidgets('列表项：有显示名时主行显示 displayName、次行显示邮箱号',
-      (WidgetTester tester) async {
+  testWidgets('列表项：有显示名时主行显示 displayName、次行显示邮箱号', (WidgetTester tester) async {
     await _pumpApp(
       tester,
       await _newController(),
@@ -73,13 +73,16 @@ void main() {
     expect(find.text('有效 · Graph'), findsNothing);
   });
 
-  testWidgets('列表项：无显示名时回退——主行邮箱号、次行「状态 · 协议」',
-      (WidgetTester tester) async {
+  testWidgets('列表项：无显示名时回退——主行邮箱号、次行「状态 · 协议」', (WidgetTester tester) async {
     await _pumpApp(
       tester,
       await _newController(),
       api: _seededApi(const [
-        AccountCredentials(email: 'zoe@outlook.com', clientId: 'c', refreshToken: 'r'),
+        AccountCredentials(
+          email: 'zoe@outlook.com',
+          clientId: 'c',
+          refreshToken: 'r',
+        ),
       ]),
     );
 
@@ -179,7 +182,7 @@ void main() {
     expect(find.text('导入'), findsOneWidget);
     expect(find.text('设置'), findsOneWidget);
     // 导入项使用上传图标
-    expect(find.byIcon(Icons.file_upload_outlined), findsOneWidget);
+    expect(find.byIcon(AppIcons.importFile), findsOneWidget);
   });
 
   testWidgets('进入设置页并切换语言为英文', (WidgetTester tester) async {

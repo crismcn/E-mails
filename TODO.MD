@@ -28,11 +28,90 @@
 
 # 兑换clientId写权限 [NO]
 
-# 首页调整
+# 首页调整 [OK]
 
 - 长按列表项 弹出的底部菜单中 在“健康检测”右侧 新增 “提权” 按钮
+  - 按钮已落地（健康检测 / 提权 / 删除 / 全选 四格等宽），点击暂弹“提权功能尚未实现”；
+    提权方案待定：scope 初始授权即锁死、个人 Outlook 禁 ROPC，无人值守只有“换 clientId 兑换”可试。
 
-# 新建邮件页面
+# 新建邮件页面 [OK]
 
 - 实现附件&选图功能
 - 内容编辑区域下方的工具栏 需要新增对其方式：参照”新建邮件-工具栏.jpg“ 1:1 实现 由于选项过多 需要左右滑动 关闭按钮固定在最右侧
+
+# 邮件详情页面 实现邮件收件-附件功能 [OK]
+
+- 风格：附件信息展示参照 “邮件详情-附件信息.jpg” 展开参照 “邮件详情-附件预览.jpg” 请1:1实现
+- 功能：一些常规文件 如 图片 txt mp3 mp4 都直接调用手机API 如果调用不了 则直接下载文件
+
+# 邮件详情页面调整 [OK]
+
+- 现在有些邮件内容是html的宽度超出手机了 要滑动才能看到，能否固定宽度只有手机屏幕宽度，内容如果超出的话需缩放
+  - 图片统一夹 `max-width:100%`；整封写死设计宽度（如 `<table width="600">`）时按该宽度渲染再用
+    `FittedBox` 整体等比缩小，永不横向滑动。宽度推断在 `htmlDeclaredWidth`（纯函数，忽略 img 宽度、
+    忽略百分比、上限 1600）。
+- 内容过多 上滑邮件的时候 顶部标题 和 底部菜单都向外收缩隐藏 全屏空间用来展示内容，当用户下滑高度快到顶部时 标题栏和底部菜单又切入出现
+  - 两条都用 `SizeTransition` 压高度（200ms），正文区随之占满全屏；贴顶 60px 内恒展开，
+    上滑越过 80px 且可滚动距离 ≥200px 才收起。**下滑即刻切回**（不是只在快到顶部才回来）——
+    `appRoute` 没有 iOS 侧滑返回，标题栏藏着就没法退出，需要严格按顶部阈值请说。
+
+# 新建邮件页面调整 [OK]
+
+- 底部工具栏图标没有均分宽度
+  - `spaceAround` 均分的是间隙不是格子，各项内容宽度不同（图标 24 vs「Aa」文字）导致中心不等距；
+    改成四个 `Expanded` 各占 1/4、格内居中。
+- 字体大小选择 和 文字颜色选择 改为横向布局可以左右滑动选择
+  - 去掉下拉浮层：点字号 / 颜色时**排版栏整行原地换成横向选项条**（可左右滑），
+    选中即生效并切回排版栏；高度恒 48，不遮正文。字号档位扩到 12–36 共 10 档。
+- 收件人右侧图标点击后选择系统联系人
+  - `flutter_contacts ^2.3.1` 的系统选择器（`FlutterContacts.native.showPicker`）。
+    多邮箱联系人会二次选择，不默认取第一个；没邮箱 / 没权限就地提示。
+  - **Android 需 `READ_CONTACTS`**（要拿邮箱就必须带 properties，插件无权限会抛异常），
+    已加进 manifest 并在调用前运行时申请；iOS 系统选择器免权限，但仍补了
+    `NSContactsUsageDescription` 以防审核问询。
+
+# 邮件详情页面调整 · 浮层化 [OK]
+
+- 顶部标题栏 和 底部菜单栏修改成绝对定位 现在滑动邮件内容时 在隐藏标题的时候 页面有个偏差距离
+  - 根因：原来用 `SizeTransition` 压高度，两条栏在 `Column` 里占位，收起时视口变高
+    → 滚动视图重新布局、`maxScrollExtent` 变短，正文当场跳一段。
+  - 改成 `Stack` + `Positioned`：滚动视图 `Positioned.fill` 恒定铺满整屏，靠**恒定**的上下
+    内边距给两条浮层让位；收放只用 `SlideTransition` 把浮层移出屏幕外沿（Stack 自带裁剪）。
+    内边距与视口都不变 → `maxScrollExtent` 恒定，正文一格都不跳（已加断言）。
+  - 内边距用两条浮层的**实测高度**（`GlobalKey` + 帧后量一次校正），写死会因平台字体 /
+    文字缩放差几像素、正好露在浮层边缘。标题栏补了不透明底色（现在压在正文上）。
+  - 浮层各自套 `ClipRect`。`SlideTransition` 是**绘制期**变换，浮层的布局矩形始终在
+    `Stack` 范围内 → `RenderStack._hasVisualOverflow == false` → 不装裁剪层 → 挪出去的
+    部分照画。真机上表现为「顶部菜单没隐藏」：标题栏滑进状态栏那条安全区里赖着不走
+    （测试的 view padding 为 0，越界即出屏被裁，所以第一版测试没抓到 —— 现在断言里
+    补了 `FakeViewPadding` 模拟刘海机型）。
+
+# 邮件详情正文换 WebView [OK]
+
+- 渲染 html 的区域改成 webview（原来的 `flutter_widget_from_html_core` 还原度不够）
+  - `webview_flutter ^4.14.1`（Flutter 官方）。包装文档抽成纯函数
+    `buildMailHtmlDocument`（视口 + CSP + 样式 + 量高脚本），组件 `MailHtmlView` 只管生命周期。
+  - **宽度**：声明宽度超屏 → 视口写 `width=<声明宽度>` 由引擎整体缩放（不再 `FittedBox` 压扁，
+    文字不发虚）；双指缩放开着；`overflow-wrap:anywhere` 顺手修掉「长 URL 撑出横条」。
+  - **高度**：页内 `ResizeObserver` 回报 `body.scrollHeight`，组件按此占位 → 整页仍一条滚动条，
+    收件人 / 附件 / 正文一起滚，标题栏收放逻辑不动。`onPageFinished` 宿主侧再量一次兜底。
+  - **正文全宽**：滚动视图不再留左右 20 边距，改由元信息自己带 —— 邮件按整屏宽设计，
+    挤在边距里会被多缩一截。
+  - **配色（按你选的「跟随主题注入暗色」）**：暗色下整份文档反色 + 图片反回来。这样不猜发件人
+    配色也能保证文字可读、版式与对比关系都留着。已知取舍：白底 logo 仍是白块、
+    元素 `background-image` 会被反色、深底设计的邮件会被反成亮底。
+  - **安全**（正文是发件人可控的敌意输入）：CSP `default-src 'none'`，脚本只认每份随机 nonce
+    的那一段；邮件自带 script / onclick / iframe / 表单 / base 全挡，`<script>` 另外物理删一遍；
+    链接不在 WebView 内导航，只把 http/https/mailto/tel 抛给外部浏览器。
+    **远程图片仍会加载**（与换之前一致），跟踪像素照旧能打点。
+- 内容过多的时候没有显示全
+  - 真凶：**`webview_flutter_android` 默认 `useWideViewPort = false`**，Android WebView 于是
+    **忽略 `viewport` meta** —— 写死 680px 的邮件按屏宽排版、不做缩放，而 Flutter 侧仍按
+    「声明宽度 → 屏宽」算了 0.53 的缩放比去定高，于是盒子只有实际显示高度的一半，
+    下半截被裁掉。显式 `AndroidWebViewController.setUseWideViewPort(true)` 修掉
+    （iOS 的 WKWebView 原生就认 viewport meta，只有 Android 有这个坑）。
+  - 顺带加固量高：取 `#mail-root` / `body` / `documentElement` 三种量法的最大值，
+    `ResizeObserver` + 轮询持续跟进，宿主侧也隔几拍补量；并用 `!important` 压掉邮件写给
+    `html/body` 的 `height:100%` / `overflow:hidden`（照办会把正文压成一屏高）。
+  - 真机验证（Android 模拟器 API 36，实账号）：680px 宽的转发邮件、Microsoft 通知邮件
+    都能滚到底、内容完整；纯文本邮件（GitHub 通知）仍走 Flutter 文本，长 URL 正常折行。

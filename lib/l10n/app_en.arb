@@ -53,7 +53,24 @@
   "@composeInvalidRecipient": {
     "placeholders": { "value": { "type": "String" } }
   },
-  "composeAttachTodo": "Attachments aren't supported yet",
+  "composeAttachTooLarge": "Attachments exceed {limit} in total — remove some first",
+  "@composeAttachTooLarge": {
+    "placeholders": { "limit": { "type": "String" } }
+  },
+  "composeAttachRemove": "Remove attachment",
+  "composeAttachEmptyFile": "Couldn't read \"{name}\" — skipped",
+  "@composeAttachEmptyFile": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "composeContactPick": "Pick a contact",
+  "composeContactPickEmail": "Choose an email address",
+  "composeContactNoEmail": "This contact has no email address",
+  "composeContactDenied": "Contacts permission denied — can't pick a contact",
+  "composeAlignLeft": "Align left",
+  "composeAlignCenter": "Align center",
+  "composeAlignRight": "Align right",
+  "composeIndentIncrease": "Increase indent",
+  "composeIndentDecrease": "Decrease indent",
   "loadMoreLoading": "Loading...",
   "loadMoreNoMore": "No more mail",
   "menuImport": "Import",
@@ -68,6 +85,21 @@
   "threadLoadHistory": "Pull down for older mail",
   "threadLoadHistoryNoMore": "No more history",
   "detailRecipient": "To:",
+  "detailAttachmentCount": "{count} attachments",
+  "@detailAttachmentCount": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "detailAttachmentOpen": "Open",
+  "detailAttachmentDownload": "Download",
+  "detailAttachmentSaved": "Saved {name}",
+  "@detailAttachmentSaved": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "detailAttachmentOpenFallback": "No app on this phone can open it — downloading instead",
+  "detailAttachmentFailed": "Couldn't fetch attachment: {message}",
+  "@detailAttachmentFailed": {
+    "placeholders": { "message": { "type": "String" } }
+  },
   "actionReply": "Reply",
   "actionReplyAll": "Reply all",
   "actionForward": "Forward",
@@ -122,7 +154,9 @@
     "placeholders": { "count": { "type": "int" } }
   },
   "actionHealthCheck": "Health check",
+  "actionElevate": "Elevate",
   "actionSelectAll": "Select all",
+  "accountElevateTodo": "Elevating permissions isn't implemented yet",
   "accountChecking": "Checking…",
   "accountCheckSummary": "Done: {ok} healthy, {bad} failed",
   "@accountCheckSummary": {

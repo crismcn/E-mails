@@ -326,11 +326,77 @@ abstract class AppLocalizations {
   /// **'收件人邮箱格式有误：{value}'**
   String composeInvalidRecipient(String value);
 
-  /// No description provided for @composeAttachTodo.
+  /// No description provided for @composeAttachTooLarge.
   ///
   /// In zh, this message translates to:
-  /// **'附件功能待接入'**
-  String get composeAttachTodo;
+  /// **'附件总大小超过 {limit}，请删掉一些再发'**
+  String composeAttachTooLarge(String limit);
+
+  /// No description provided for @composeAttachRemove.
+  ///
+  /// In zh, this message translates to:
+  /// **'移除附件'**
+  String get composeAttachRemove;
+
+  /// No description provided for @composeAttachEmptyFile.
+  ///
+  /// In zh, this message translates to:
+  /// **'「{name}」读不到内容，已跳过'**
+  String composeAttachEmptyFile(String name);
+
+  /// No description provided for @composeContactPick.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择联系人'**
+  String get composeContactPick;
+
+  /// No description provided for @composeContactPickEmail.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择邮箱地址'**
+  String get composeContactPickEmail;
+
+  /// No description provided for @composeContactNoEmail.
+  ///
+  /// In zh, this message translates to:
+  /// **'该联系人没有邮箱地址'**
+  String get composeContactNoEmail;
+
+  /// No description provided for @composeContactDenied.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有通讯录权限，无法选择联系人'**
+  String get composeContactDenied;
+
+  /// No description provided for @composeAlignLeft.
+  ///
+  /// In zh, this message translates to:
+  /// **'左对齐'**
+  String get composeAlignLeft;
+
+  /// No description provided for @composeAlignCenter.
+  ///
+  /// In zh, this message translates to:
+  /// **'居中'**
+  String get composeAlignCenter;
+
+  /// No description provided for @composeAlignRight.
+  ///
+  /// In zh, this message translates to:
+  /// **'右对齐'**
+  String get composeAlignRight;
+
+  /// No description provided for @composeIndentIncrease.
+  ///
+  /// In zh, this message translates to:
+  /// **'增加缩进'**
+  String get composeIndentIncrease;
+
+  /// No description provided for @composeIndentDecrease.
+  ///
+  /// In zh, this message translates to:
+  /// **'减少缩进'**
+  String get composeIndentDecrease;
 
   /// No description provided for @loadMoreLoading.
   ///
@@ -397,6 +463,42 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'收件人：'**
   String get detailRecipient;
+
+  /// No description provided for @detailAttachmentCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 个附件'**
+  String detailAttachmentCount(int count);
+
+  /// No description provided for @detailAttachmentOpen.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开'**
+  String get detailAttachmentOpen;
+
+  /// No description provided for @detailAttachmentDownload.
+  ///
+  /// In zh, this message translates to:
+  /// **'下载'**
+  String get detailAttachmentDownload;
+
+  /// No description provided for @detailAttachmentSaved.
+  ///
+  /// In zh, this message translates to:
+  /// **'已保存 {name}'**
+  String detailAttachmentSaved(String name);
+
+  /// No description provided for @detailAttachmentOpenFallback.
+  ///
+  /// In zh, this message translates to:
+  /// **'手机上没有能打开它的应用，改为下载'**
+  String get detailAttachmentOpenFallback;
+
+  /// No description provided for @detailAttachmentFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'附件获取失败：{message}'**
+  String detailAttachmentFailed(String message);
 
   /// No description provided for @actionReply.
   ///
@@ -650,11 +752,23 @@ abstract class AppLocalizations {
   /// **'健康检测'**
   String get actionHealthCheck;
 
+  /// No description provided for @actionElevate.
+  ///
+  /// In zh, this message translates to:
+  /// **'提权'**
+  String get actionElevate;
+
   /// No description provided for @actionSelectAll.
   ///
   /// In zh, this message translates to:
   /// **'全选'**
   String get actionSelectAll;
+
+  /// No description provided for @accountElevateTodo.
+  ///
+  /// In zh, this message translates to:
+  /// **'提权功能尚未实现'**
+  String get accountElevateTodo;
 
   /// No description provided for @accountChecking.
   ///

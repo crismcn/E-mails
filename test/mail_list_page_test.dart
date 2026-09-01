@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:email_manager/theme/app_icons.dart';
 import 'package:email_manager/api/api_service.dart';
 import 'package:email_manager/api/mail_api.dart';
 import 'package:email_manager/core/auth/credentials_store.dart';
@@ -137,7 +138,7 @@ void main() {
     // 左滑 Claude 一行露出动作面板，点「标记已读」。
     await tester.drag(find.text('Claude'), const Offset(-320, 0));
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.mark_email_unread_outlined).first);
+    await tester.tap(find.byIcon(AppIcons.unread).first);
     await tester.pumpAndSettle();
 
     // 回写记录到 Graph：m1 → isRead true。
@@ -154,7 +155,7 @@ void main() {
 
     await tester.drag(find.text('Claude'), const Offset(-320, 0));
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.mark_email_unread_outlined).first);
+    await tester.tap(find.byIcon(AppIcons.unread).first);
     await tester.pumpAndSettle();
 
     // 发起过写回，但失败 → 提示操作失败、未读角标回滚为 2。
@@ -176,7 +177,7 @@ void main() {
     expect(api.readUpdates, [('m1', true)]);
 
     // 返回列表：Claude 未读已清，未读只剩 1（蓝湖）：顶部徽标 + 角标共 2 处「1」。
-    await tester.tap(find.byIcon(Icons.arrow_back));
+    await tester.tap(find.byIcon(AppIcons.back));
     await tester.pumpAndSettle();
     expect(find.text('1'), findsNWidgets(2));
   });
@@ -267,7 +268,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 未填收件人时发送按钮置灰不可点，不会发请求。
-    await tester.tap(find.byIcon(Icons.send_outlined));
+    await tester.tap(find.byIcon(AppIcons.send));
     await tester.pump();
     expect(api.sentMails, isEmpty);
 
@@ -283,7 +284,7 @@ void main() {
     await tester.enterText(find.byKey(const Key('compose-body-field')), '正文内容');
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.send_outlined));
+    await tester.tap(find.byIcon(AppIcons.send));
     await tester.pumpAndSettle();
 
     // 发信参数正确、纯文本、正常重要性；发送成功后返回列表页。
@@ -311,7 +312,7 @@ void main() {
       'not-an-email',
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.send_outlined));
+    await tester.tap(find.byIcon(AppIcons.send));
     await tester.pump();
 
     expect(find.textContaining('收件人邮箱格式有误'), findsOneWidget);
@@ -329,7 +330,7 @@ void main() {
       'bob@outlook.com',
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.send_outlined));
+    await tester.tap(find.byIcon(AppIcons.send));
     await tester.pumpAndSettle();
 
     expect(api.sentMails.length, 1);
@@ -361,9 +362,7 @@ void main() {
     expect(find.text('邮件加载失败'), findsNothing);
   });
 
-  testWidgets('切到已发送取 sentitems 计数；已标星无对应文件夹则不请求', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('切到已发送取 sentitems 计数；已标星无对应文件夹则不请求', (WidgetTester tester) async {
     final api = FakeMailApi();
     await _pumpMailList(tester, api);
     expect(api.statsFolders, ['inbox']);

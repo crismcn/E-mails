@@ -60,14 +60,16 @@ ImportResult parseImportText(String raw) {
       continue;
     }
 
-    accounts.add(ImportedAccount(
-      email: parts[0],
-      password: parts[1],
-      clientId: parts[2],
-      refreshToken: parts[3],
-      // 创建时间可能包含分隔符外的空格，取剩余字段拼回以保持完整。
-      createdAt: parts.sublist(4).join(' ').trim(),
-    ));
+    accounts.add(
+      ImportedAccount(
+        email: parts[0],
+        password: parts[1],
+        clientId: parts[2],
+        refreshToken: parts[3],
+        // 创建时间可能包含分隔符外的空格，取剩余字段拼回以保持完整。
+        createdAt: parts.sublist(4).join(' ').trim(),
+      ),
+    );
   }
 
   return ImportResult(accounts: accounts, invalidLines: invalid);

@@ -164,4 +164,3 @@ bool _isOAuthAuthError(String? oauthError) => switch (oauthError) {
   'consent_required' => true,
   _ => false,
 };
-

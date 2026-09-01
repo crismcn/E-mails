@@ -29,7 +29,8 @@ void main() {
     });
 
     test('字段不足或非法邮箱计入无效行', () {
-      const raw = 'not-an-email----pass----cid----token----time\n'
+      const raw =
+          'not-an-email----pass----cid----token----time\n'
           'incomplete@outlook.com----pass\n'
           'dave@outlook.com----pass----cid----token----2024-01-01 00:00:00';
       final result = parseImportText(raw);
@@ -40,7 +41,8 @@ void main() {
     });
 
     test('忽略空行', () {
-      const raw = '\n\n  \n'
+      const raw =
+          '\n\n  \n'
           'eve@outlook.com----p----c----t----2024-01-01 00:00:00\n\n';
       final result = parseImportText(raw);
 

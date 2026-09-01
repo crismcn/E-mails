@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 
 import 'package:email_manager/api/mail_api.dart';
@@ -14,12 +16,28 @@ class FakeMailApi extends MailApi {
     List<GraphMessage>? messages,
     Map<String, List<GraphMessage>>? conversations,
     Map<String, GraphMessage>? fullMessages,
+    Map<String, List<GraphAttachment>>? attachments,
+    Map<String, List<int>>? attachmentBytes,
     this.folderStats,
     this.failure,
   }) : messages = messages ?? kFakeGraphMessages,
        conversations = conversations ?? kFakeConversations,
        fullMessages = fullMessages ?? kFakeFullMessages,
+       attachments = attachments ?? kFakeAttachments,
+       attachmentBytes = attachmentBytes ?? kFakeAttachmentBytes,
        super(ApiClient(Dio()));
+
+  /// 各邮件的附件元信息：message.id → 附件列表。
+  final Map<String, List<GraphAttachment>> attachments;
+
+  /// 各附件的内容：attachment.id → 字节。缺失即视为「非文件类附件」取不到内容。
+  final Map<String, List<int>> attachmentBytes;
+
+  /// listAttachments 是否失败（模拟无权限 / 网络问题 → 详情页静默不显示附件条）。
+  bool listAttachmentsFails = false;
+
+  /// 记录取过内容的附件 id，用于断言「只有图片才预取字节」。
+  final List<String> fetchedAttachmentIds = <String>[];
 
   /// 服务端「全部」邮件，按 skip/top 切片。
   final List<GraphMessage> messages;
@@ -76,6 +94,7 @@ class FakeMailApi extends MailApi {
       String body,
       bool isHtml,
       String importance,
+      List<MailAttachment> attachments,
     })
   >
   sentMails = [];
@@ -146,15 +165,45 @@ class FakeMailApi extends MailApi {
     final full = fullMessages[id];
     if (full != null) return ApiResponse<GraphMessage>.success(full);
     // 未预置全文的：回退到列表/会话里同 id 的消息（无 body）。
-    final all = [
-      ...messages,
-      for (final c in conversations.values) ...c,
-    ];
+    final all = [...messages, for (final c in conversations.values) ...c];
     final match = all.where((m) => m.id == id);
     if (match.isNotEmpty) {
       return ApiResponse<GraphMessage>.success(match.first);
     }
     return const ApiResponse<GraphMessage>.failure(-99, 'not found');
+  }
+
+  @override
+  Future<ApiResponse<List<GraphAttachment>>> listAttachments(
+    String email,
+    String messageId,
+  ) async {
+    if (listAttachmentsFails) {
+      return const ApiResponse<List<GraphAttachment>>.failure(
+        403,
+        'AADSTS70000: 无权限',
+      );
+    }
+    return ApiResponse<List<GraphAttachment>>.success(
+      attachments[messageId] ?? const <GraphAttachment>[],
+    );
+  }
+
+  @override
+  Future<ApiResponse<List<int>>> getAttachmentBytes(
+    String email,
+    String messageId,
+    String attachmentId,
+  ) async {
+    fetchedAttachmentIds.add(attachmentId);
+    final bytes = attachmentBytes[attachmentId];
+    if (bytes == null) {
+      return const ApiResponse<List<int>>.failure(
+        -4,
+        '响应解析失败：附件无 contentBytes（非文件类附件）',
+      );
+    }
+    return ApiResponse<List<int>>.success(bytes);
   }
 
   @override
@@ -195,6 +244,7 @@ class FakeMailApi extends MailApi {
     required String body,
     bool isHtml = false,
     String importance = 'normal',
+    List<MailAttachment> attachments = const <MailAttachment>[],
   }) async {
     sentMails.add((
       email: email,
@@ -203,6 +253,7 @@ class FakeMailApi extends MailApi {
       body: body,
       isHtml: isHtml,
       importance: importance,
+      attachments: attachments,
     ));
     if (sendMailFails) {
       return const ApiResponse<bool>.failure(403, 'AADSTS70000: 无发信权限');
@@ -225,6 +276,7 @@ GraphMessage fakeGraphMessage({
   String? bodyContent,
   bool bodyIsHtml = false,
   bool isFlagged = false,
+  bool hasAttachments = false,
 }) {
   return GraphMessage(
     id: id,
@@ -239,6 +291,7 @@ GraphMessage fakeGraphMessage({
     bodyContent: bodyContent,
     bodyIsHtml: bodyIsHtml,
     isFlagged: isFlagged,
+    hasAttachments: hasAttachments,
   );
 }
 
@@ -302,6 +355,23 @@ final Map<String, List<GraphMessage>> kFakeConversations = {
   ],
 };
 
+/// 一封「非响应式」邮件正文 —— 外层写死 600px、行数足够长。
+///
+/// 供详情页验证超宽内容的处理：视口按声明宽度铺开、由浏览器整体缩放。
+final String kWideTallHtml =
+    '<table width="600" style="width:600px"><tbody>'
+    '${[for (var i = 1; i <= 60; i++) '<tr><td width="600"><p>宽版邮件正文第 $i 行，用于撑出可滚动高度。</p></td></tr>'].join()}'
+    '</tbody></table>';
+
+/// 一封够长的**纯文本**正文 —— 撑出可滚动高度。
+///
+/// 特意用纯文本而不是 HTML：HTML 正文在 widget 测试里走 WebView 的降级分支
+/// （没有平台视图，高度为 0），撑不出滚动距离，验证不了「上滑收起标题栏」。
+final String kLongPlainBody = [
+  '这是 Claude 通知的纯文本正文，仅用于验证纯文本渲染。',
+  for (var i = 1; i <= 60; i++) '正文第 $i 行，用于撑出可滚动高度。',
+].join('\n');
+
 /// 单封全文（getMessage）：最新一条为 HTML（含链接），历史为纯文本。
 final Map<String, GraphMessage> kFakeFullMessages = {
   // Claude（列表项 m1）—— 纯文本全文，供详情页纯文本渲染路径。
@@ -312,10 +382,23 @@ final Map<String, GraphMessage> kFakeFullMessages = {
     subject: 'Claude 任务执行通知 · ✅ 任务已完成',
     toRecipients: const ['crism@qq.com'],
     receivedDateTime: '2026-08-25T09:38:00Z',
-    bodyContent: '这是 Claude 通知的纯文本正文，仅用于验证纯文本渲染。',
+    bodyContent: kLongPlainBody,
     bodyIsHtml: false,
     // 已在服务端标星 —— 供详情页验证「进入即回填星标态」。
     isFlagged: true,
+    // 带两个附件（一图一 txt）—— 供详情页附件条与预览的断言。
+    hasAttachments: true,
+  ),
+  // Cursor Team（列表项 m2）—— 写死 600px 宽、行数很长的 HTML 全文。
+  'm2': fakeGraphMessage(
+    id: 'm2',
+    conversationId: 'c2',
+    fromName: 'Cursor Team',
+    subject: 'Get more room to build with Cursor',
+    toRecipients: const ['crism@qq.com'],
+    receivedDateTime: '2026-08-25T09:38:00Z',
+    bodyContent: kWideTallHtml,
+    bodyIsHtml: true,
   ),
   'c3-1': fakeGraphMessage(
     id: 'c3-1',
@@ -343,4 +426,40 @@ final Map<String, GraphMessage> kFakeFullMessages = {
 <p>或查看详情：<a href="https://example.com/detail">https://example.com/detail</a></p>
 ''',
   ),
+};
+
+/// 附件元信息：message.id → 附件列表。m1 带一图（58.png）+ 一文本（scriptlog.txt），
+/// 与「邮件详情-附件预览.jpg」的样例一致；另有一个内嵌图，用于验证被过滤掉。
+final Map<String, List<GraphAttachment>> kFakeAttachments = {
+  'm1': const [
+    GraphAttachment(
+      id: 'att-img',
+      name: '58.png',
+      contentType: 'image/png',
+      size: 3810,
+    ),
+    GraphAttachment(
+      id: 'att-txt',
+      name: 'scriptlog.txt',
+      contentType: 'text/plain',
+      size: 44,
+    ),
+    // 正文内嵌图 —— 附件条不应列出它，也不参与总大小。
+    GraphAttachment(
+      id: 'att-inline',
+      name: 'logo.gif',
+      contentType: 'image/gif',
+      size: 900,
+      isInline: true,
+    ),
+  ],
+};
+
+/// 附件内容：图片用一张真实的 1×1 PNG（`Image.memory` 需要能解码），文本给几个字节。
+final Map<String, List<int>> kFakeAttachmentBytes = {
+  'att-img': base64Decode(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAF'
+    'AAH/q842iQAAAABJRU5ErkJggg==',
+  ),
+  'att-txt': utf8.encode('script log line\n'),
 };

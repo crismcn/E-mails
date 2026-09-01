@@ -134,7 +134,45 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get composeAttachTodo => 'Attachments aren\'t supported yet';
+  String composeAttachTooLarge(String limit) {
+    return 'Attachments exceed $limit in total — remove some first';
+  }
+
+  @override
+  String get composeAttachRemove => 'Remove attachment';
+
+  @override
+  String composeAttachEmptyFile(String name) {
+    return 'Couldn\'t read \"$name\" — skipped';
+  }
+
+  @override
+  String get composeContactPick => 'Pick a contact';
+
+  @override
+  String get composeContactPickEmail => 'Choose an email address';
+
+  @override
+  String get composeContactNoEmail => 'This contact has no email address';
+
+  @override
+  String get composeContactDenied =>
+      'Contacts permission denied — can\'t pick a contact';
+
+  @override
+  String get composeAlignLeft => 'Align left';
+
+  @override
+  String get composeAlignCenter => 'Align center';
+
+  @override
+  String get composeAlignRight => 'Align right';
+
+  @override
+  String get composeIndentIncrease => 'Increase indent';
+
+  @override
+  String get composeIndentDecrease => 'Decrease indent';
 
   @override
   String get loadMoreLoading => 'Loading...';
@@ -170,6 +208,31 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get detailRecipient => 'To:';
+
+  @override
+  String detailAttachmentCount(int count) {
+    return '$count attachments';
+  }
+
+  @override
+  String get detailAttachmentOpen => 'Open';
+
+  @override
+  String get detailAttachmentDownload => 'Download';
+
+  @override
+  String detailAttachmentSaved(String name) {
+    return 'Saved $name';
+  }
+
+  @override
+  String get detailAttachmentOpenFallback =>
+      'No app on this phone can open it — downloading instead';
+
+  @override
+  String detailAttachmentFailed(String message) {
+    return 'Couldn\'t fetch attachment: $message';
+  }
 
   @override
   String get actionReply => 'Reply';
@@ -307,7 +370,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get actionHealthCheck => 'Health check';
 
   @override
+  String get actionElevate => 'Elevate';
+
+  @override
   String get actionSelectAll => 'Select all';
+
+  @override
+  String get accountElevateTodo =>
+      'Elevating permissions isn\'t implemented yet';
 
   @override
   String get accountChecking => 'Checking…';

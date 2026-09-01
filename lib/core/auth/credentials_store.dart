@@ -67,15 +67,15 @@ class AccountCredentials {
       );
 
   Map<String, dynamic> toJson() => {
-        'email': email,
-        'clientId': clientId,
-        'refreshToken': refreshToken,
-        if (password != null) 'password': password,
-        'status': status,
-        if (displayName != null) 'displayName': displayName,
-        if (address != null) 'address': address,
-        if (userId != null) 'userId': userId,
-      };
+    'email': email,
+    'clientId': clientId,
+    'refreshToken': refreshToken,
+    if (password != null) 'password': password,
+    'status': status,
+    if (displayName != null) 'displayName': displayName,
+    if (address != null) 'address': address,
+    if (userId != null) 'userId': userId,
+  };
 
   factory AccountCredentials.fromJson(Map<String, dynamic> json) =>
       AccountCredentials(
@@ -156,14 +156,14 @@ class SecureCredentialsStore implements CredentialsStore {
   Future<AccountCredentials?> find(String email) async {
     final raw = await _storage.read(_keyFor(email));
     if (raw == null) return null;
-    return AccountCredentials.fromJson(
-      jsonDecode(raw) as Map<String, dynamic>,
-    );
+    return AccountCredentials.fromJson(jsonDecode(raw) as Map<String, dynamic>);
   }
 
   @override
-  Future<void> update(AccountCredentials credentials) =>
-      _storage.write(_keyFor(credentials.email), jsonEncode(credentials.toJson()));
+  Future<void> update(AccountCredentials credentials) => _storage.write(
+    _keyFor(credentials.email),
+    jsonEncode(credentials.toJson()),
+  );
 
   @override
   Future<void> upsertAll(Iterable<AccountCredentials> credentials) async {

@@ -22,8 +22,7 @@ class SegmentedSelector extends StatelessWidget {
     final palette = context.palette;
     final count = segments.length;
     // 指示块水平对齐：单段居中，多段在 [-1, 1] 间均分。
-    final double alignX =
-        count <= 1 ? 0 : -1 + 2 * selectedIndex / (count - 1);
+    final double alignX = count <= 1 ? 0 : -1 + 2 * selectedIndex / (count - 1);
 
     return Container(
       height: 44,

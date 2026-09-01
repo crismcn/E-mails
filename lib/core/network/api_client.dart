@@ -21,14 +21,13 @@ class ApiClient {
     Map<String, dynamic>? query,
     required ResponseParser<T> parser,
     CancelToken? cancelToken,
-  }) =>
-      request<T>(
-        method: 'GET',
-        path: path,
-        query: query,
-        parser: parser,
-        cancelToken: cancelToken,
-      );
+  }) => request<T>(
+    method: 'GET',
+    path: path,
+    query: query,
+    parser: parser,
+    cancelToken: cancelToken,
+  );
 
   Future<ApiResponse<T>> post<T>(
     String path, {
@@ -36,15 +35,14 @@ class ApiClient {
     Map<String, dynamic>? query,
     required ResponseParser<T> parser,
     CancelToken? cancelToken,
-  }) =>
-      request<T>(
-        method: 'POST',
-        path: path,
-        data: data,
-        query: query,
-        parser: parser,
-        cancelToken: cancelToken,
-      );
+  }) => request<T>(
+    method: 'POST',
+    path: path,
+    data: data,
+    query: query,
+    parser: parser,
+    cancelToken: cancelToken,
+  );
 
   /// 通用请求 —— 其余便捷方法都走它。
   ///

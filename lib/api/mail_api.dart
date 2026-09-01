@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../core/network/api_client.dart';
 import '../core/network/api_response.dart';
 import '../core/network/interceptors/auth_interceptor.dart';
@@ -55,6 +57,7 @@ class GraphMessage {
     this.bodyContent,
     this.bodyIsHtml = false,
     this.isFlagged = false,
+    this.hasAttachments = false,
   });
 
   final String id;
@@ -86,6 +89,10 @@ class GraphMessage {
 
   /// 是否已标星（`flag.flagStatus == 'flagged'`）。
   final bool isFlagged;
+
+  /// 是否带附件（`hasAttachments`）—— 详情页据此决定要不要再拉附件列表。
+  /// 注意：仅正文内嵌图（`cid:`）的邮件此字段也可能为 true。
+  final bool hasAttachments;
 
   factory GraphMessage.fromJson(Map<String, dynamic> json) {
     final fromField = json['from'];
@@ -125,15 +132,16 @@ class GraphMessage {
       if (bodyField['content'] is String) {
         bodyContent = bodyField['content'] as String;
       }
-      bodyIsHtml = (bodyField['contentType'] as String?)?.toLowerCase() == 'html';
+      bodyIsHtml =
+          (bodyField['contentType'] as String?)?.toLowerCase() == 'html';
     }
 
     // flag: {flagStatus:'flagged'|'notFlagged'|'complete'} → 是否已标星。
     var isFlagged = false;
     final flagField = json['flag'];
     if (flagField is Map) {
-      isFlagged = (flagField['flagStatus'] as String?)?.toLowerCase() ==
-          'flagged';
+      isFlagged =
+          (flagField['flagStatus'] as String?)?.toLowerCase() == 'flagged';
     }
 
     return GraphMessage(
@@ -149,6 +157,7 @@ class GraphMessage {
       bodyContent: bodyContent,
       bodyIsHtml: bodyIsHtml,
       isFlagged: isFlagged,
+      hasAttachments: json['hasAttachments'] as bool? ?? false,
     );
   }
 }
@@ -170,6 +179,82 @@ class GraphMessagePage {
       nextLink: json['@odata.nextLink'] as String?,
     );
   }
+}
+
+/// 收到的附件元信息（**不含内容**）—— `GET /me/messages/{id}/attachments`。
+///
+/// 内容要另取（[MailApi.getAttachmentBytes]），因为 Graph 的附件列表若带 `contentBytes`
+/// 会把整封邮件的附件全量塞进一个响应，几 MB 的图片会让列表请求变得又慢又占内存。
+class GraphAttachment {
+  const GraphAttachment({
+    required this.id,
+    required this.name,
+    required this.contentType,
+    required this.size,
+    this.isInline = false,
+  });
+
+  final String id;
+  final String name;
+
+  /// MIME 类型，如 `image/png`；Graph 偶尔给空串。
+  final String contentType;
+
+  /// 字节数 —— Graph 的 `size` 含协议开销，略大于真实内容，仅用于展示。
+  final int size;
+
+  /// 是否为正文内嵌图（HTML 里以 `cid:` 引用）—— 附件条不列它。
+  final bool isInline;
+
+  bool get isImage => contentType.toLowerCase().startsWith('image/');
+
+  /// 扩展名（大写、不含点）—— 附件卡片上的类型角标，如 `TXT`。
+  String get extensionLabel {
+    final dot = name.lastIndexOf('.');
+    if (dot < 0 || dot == name.length - 1) return '?';
+    return name.substring(dot + 1).toUpperCase();
+  }
+
+  factory GraphAttachment.fromJson(Map<String, dynamic> json) {
+    return GraphAttachment(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      contentType: json['contentType'] as String? ?? '',
+      size: (json['size'] as num?)?.toInt() ?? 0,
+      isInline: json['isInline'] as bool? ?? false,
+    );
+  }
+}
+
+/// 待发送的附件 —— 对应 Graph 的 `fileAttachment`：内容 base64 内嵌在 sendMail 请求体里。
+///
+/// 只支持这种「小附件」形式:Graph 要求整个 sendMail 请求体不超过 4MB，base64 又会把
+/// 体积放大约 1/3，故调用方需自行限制原始字节总量（见 `ComposePage._kMaxAttachBytes`）。
+/// 更大的附件要走 `createUploadSession` 分片上传，本项目暂不需要。
+class MailAttachment {
+  const MailAttachment({
+    required this.name,
+    required this.contentType,
+    required this.bytes,
+  });
+
+  /// 附件文件名（含扩展名）—— 收件方看到的名字。
+  final String name;
+
+  /// MIME 类型，如 `image/jpeg`；拿不准时用 `application/octet-stream`。
+  final String contentType;
+
+  /// 原始字节 —— 序列化时才做 base64，避免在内存里存两份。
+  final List<int> bytes;
+
+  int get size => bytes.length;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    '@odata.type': '#microsoft.graph.fileAttachment',
+    'name': name,
+    'contentType': contentType,
+    'contentBytes': base64Encode(bytes),
+  };
 }
 
 /// Graph 邮件接口 —— 走统一请求规范：鉴权拦截注入 Bearer + 401 刷新重试 + 响应归一化。
@@ -198,8 +283,7 @@ class MailApi {
       path: '/me/mailFolders/$folderId',
       query: <String, dynamic>{r'$select': 'unreadItemCount,totalItemCount'},
       extra: <String, dynamic>{AuthInterceptor.accountKey: email},
-      parser: (json) =>
-          MailFolderStats.fromJson(json as Map<String, dynamic>),
+      parser: (json) => MailFolderStats.fromJson(json as Map<String, dynamic>),
     );
   }
 
@@ -271,13 +355,11 @@ class MailApi {
       path: '/me/messages',
       query: <String, dynamic>{
         r'$filter': "conversationId eq '$escaped'",
-        r'$select':
-            'id,subject,from,toRecipients,bodyPreview,isRead,receivedDateTime,conversationId',
+        r'$select': 'id,subject,from,toRecipients,bodyPreview,isRead,receivedDateTime,conversationId',
         r'$top': top,
       },
       extra: <String, dynamic>{AuthInterceptor.accountKey: email},
-      parser: (json) =>
-          GraphMessagePage.fromJson(json as Map<String, dynamic>),
+      parser: (json) => GraphMessagePage.fromJson(json as Map<String, dynamic>),
     );
   }
 
@@ -287,11 +369,57 @@ class MailApi {
       method: 'GET',
       path: '/me/messages/$id',
       query: <String, dynamic>{
-        r'$select':
-            'id,subject,from,toRecipients,body,bodyPreview,isRead,receivedDateTime,conversationId,flag',
+        r'$select': 'id,subject,from,toRecipients,body,bodyPreview,isRead,receivedDateTime,conversationId,flag,hasAttachments',
       },
       extra: <String, dynamic>{AuthInterceptor.accountKey: email},
       parser: (json) => GraphMessage.fromJson(json as Map<String, dynamic>),
+    );
+  }
+
+  /// 列出某封邮件的附件（仅元信息，不含内容）。
+  ///
+  /// 正文内嵌图（`isInline`）也会在结果里，由调用方决定是否过滤。
+  Future<ApiResponse<List<GraphAttachment>>> listAttachments(
+    String email,
+    String messageId,
+  ) {
+    return _client.request<List<GraphAttachment>>(
+      method: 'GET',
+      path: '/me/messages/$messageId/attachments',
+      query: <String, dynamic>{r'$select': 'id,name,contentType,size,isInline'},
+      extra: <String, dynamic>{AuthInterceptor.accountKey: email},
+      parser: (json) {
+        final value =
+            ((json as Map<String, dynamic>)['value'] as List?) ?? const [];
+        return value
+            .whereType<Map<String, dynamic>>()
+            .map(GraphAttachment.fromJson)
+            .toList();
+      },
+    );
+  }
+
+  /// 取单个附件的内容字节 —— `contentBytes`（base64）解码后返回。
+  ///
+  /// 只对 `fileAttachment` 有效；`itemAttachment`（嵌套邮件）/ `referenceAttachment`
+  /// （云盘链接）没有 `contentBytes`，会走到解析失败（[ApiCode.parse]），
+  /// 由调用方如实提示 —— 这类附件本项目不支持打开。
+  Future<ApiResponse<List<int>>> getAttachmentBytes(
+    String email,
+    String messageId,
+    String attachmentId,
+  ) {
+    return _client.request<List<int>>(
+      method: 'GET',
+      path: '/me/messages/$messageId/attachments/$attachmentId',
+      extra: <String, dynamic>{AuthInterceptor.accountKey: email},
+      parser: (json) {
+        final raw = (json as Map<String, dynamic>)['contentBytes'];
+        if (raw is! String || raw.isEmpty) {
+          throw const FormatException('附件无 contentBytes（非文件类附件）');
+        }
+        return base64Decode(raw);
+      },
     );
   }
 
@@ -334,12 +462,14 @@ class MailApi {
       parser: (json) => GraphMessage.fromJson(json as Map<String, dynamic>),
     );
   }
+
   ///
   /// 需要 `Mail.Send` scope。导入的账号若未授权它，会返回 403 / AADSTS70000，
   /// 由调用方据 [ApiResponse.isSuccess] 如实提示（需重新授权换 token，见 CLAUDE.md §6）。
   ///
   /// 成功时 Graph 返回 **202 Accepted 且响应体为空**，故解析器忽略 body 直接返回 true。
   /// [importance] 取 `high` / `normal` / `low`；[isHtml] 决定正文 contentType。
+  /// [attachments] 为小附件（base64 内嵌），空列表时不下发 `attachments` 字段。
   Future<ApiResponse<bool>> sendMail(
     String email, {
     required List<String> to,
@@ -347,6 +477,7 @@ class MailApi {
     required String body,
     bool isHtml = false,
     String importance = 'normal',
+    List<MailAttachment> attachments = const <MailAttachment>[],
   }) {
     return _client.request<bool>(
       method: 'POST',
@@ -365,6 +496,8 @@ class MailApi {
                 'emailAddress': <String, dynamic>{'address': address},
               },
           ],
+          if (attachments.isNotEmpty)
+            'attachments': [for (final a in attachments) a.toJson()],
         },
         'saveToSentItems': true,
       },

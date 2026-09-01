@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../api/api_scope.dart';
 import '../data/account_import.dart';
 import '../l10n/app_localizations.dart';
+import '../theme/app_icons.dart';
 import '../theme/app_palette.dart';
 
 /// 导入邮箱页 —— 支持 CSV 文件导入与文本粘贴导入。
@@ -148,7 +149,7 @@ class _Header extends StatelessWidget {
         children: [
           IconButton(
             onPressed: () => Navigator.of(context).maybePop(),
-            icon: Icon(Icons.arrow_back, color: palette.textPrimary, size: 20),
+            icon: Icon(AppIcons.back, color: palette.textPrimary, size: 20),
             splashRadius: 22,
           ),
           const SizedBox(width: 4),
@@ -213,9 +214,7 @@ class _CsvDropZone extends StatelessWidget {
           child: Column(
             children: [
               Icon(
-                picked
-                    ? Icons.check_circle_outline
-                    : Icons.file_upload_outlined,
+                picked ? AppIcons.checkCircle : AppIcons.importFile,
                 color: picked ? palette.primary : palette.textSecondary,
                 size: 36,
               ),

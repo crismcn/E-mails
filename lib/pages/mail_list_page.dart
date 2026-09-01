@@ -10,6 +10,7 @@ import '../data/mail_mapper.dart';
 import '../l10n/app_localizations.dart';
 import '../models/mail.dart';
 import '../theme/app_page_route.dart';
+import '../theme/app_icons.dart';
 import '../theme/app_palette.dart';
 import '../theme/app_scroll_behavior.dart';
 import '../widgets/app_refresh.dart';
@@ -375,7 +376,7 @@ class _MailListPageState extends State<MailListPage>
           foregroundColor: Colors.white,
           elevation: 4,
           shape: const CircleBorder(),
-          child: const Icon(Icons.add, size: 24),
+          child: const Icon(AppIcons.add, size: 24),
         ),
       ),
       body: SafeArea(
@@ -486,7 +487,7 @@ class _Header extends StatelessWidget {
         children: [
           IconButton(
             onPressed: () => Navigator.of(context).maybePop(),
-            icon: Icon(Icons.arrow_back, color: palette.textPrimary, size: 20),
+            icon: Icon(AppIcons.back, color: palette.textPrimary, size: 20),
             splashRadius: 22,
           ),
           const SizedBox(width: 2),
@@ -522,7 +523,7 @@ class _Header extends StatelessWidget {
                             end: 0.5,
                           ).animate(drawerAnim),
                           child: Icon(
-                            Icons.arrow_drop_down,
+                            AppIcons.dropDown,
                             color: palette.textPrimary,
                             size: 26,
                           ),
@@ -641,7 +642,7 @@ class _FolderDrawer extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               _FolderRow(
-                icon: Icons.inbox_outlined,
+                icon: AppIcons.inbox,
                 label: l10n.folderInbox,
                 trailing: unread > 0 ? '$unread' : null,
                 selected: current == MailFolder.inbox,
@@ -649,7 +650,7 @@ class _FolderDrawer extends StatelessWidget {
               ),
               _rowDivider(palette),
               _FolderRow(
-                icon: Icons.mark_email_unread_outlined,
+                icon: AppIcons.unread,
                 label: l10n.folderUnread,
                 trailing: unread > 0 ? '$unread' : null,
                 selected: current == MailFolder.unread,
@@ -657,7 +658,7 @@ class _FolderDrawer extends StatelessWidget {
               ),
               _rowDivider(palette),
               _FolderRow(
-                icon: Icons.star_outline,
+                icon: AppIcons.starredFolder,
                 label: l10n.folderFlagged,
                 trailing: flaggedCount != null ? '$flaggedCount' : null,
                 selected: current == MailFolder.flagged,
@@ -665,7 +666,7 @@ class _FolderDrawer extends StatelessWidget {
               ),
               _rowDivider(palette),
               _FolderRow(
-                icon: Icons.send_outlined,
+                icon: AppIcons.sentFolder,
                 label: l10n.folderSent,
                 selected: current == MailFolder.sent,
                 onTap: () => onSelect(MailFolder.sent),
@@ -757,11 +758,7 @@ class _ErrorView extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.cloud_off_outlined,
-                color: palette.textSecondary,
-                size: 40,
-              ),
+              Icon(AppIcons.cloudOff, color: palette.textSecondary, size: 40),
               const SizedBox(height: 12),
               Text(
                 l10n.mailLoadFailed,
@@ -818,7 +815,7 @@ class _SearchBox extends StatelessWidget {
           hintText: l10n.mailSearchHint,
           hintStyle: TextStyle(color: palette.textSecondary, fontSize: 14),
           prefixIcon: Icon(
-            Icons.search,
+            AppIcons.search,
             color: palette.textSecondary,
             size: 19,
           ),
@@ -929,17 +926,17 @@ class _MailList extends StatelessWidget {
               children: [
                 _SwipeAction(
                   color: const Color(0xFF34C759),
-                  icon: Icons.drive_file_move_outlined,
+                  icon: AppIcons.archive,
                   onPressed: () => onArchive(mail),
                 ),
                 _SwipeAction(
                   color: const Color(0xFF2F80FF),
-                  icon: Icons.mark_email_unread_outlined,
+                  icon: AppIcons.unread,
                   onPressed: () => onToggleRead(mail),
                 ),
                 _SwipeAction(
                   color: const Color(0xFFFF4D4F),
-                  icon: Icons.delete_outline,
+                  icon: AppIcons.delete,
                   onPressed: () => onDelete(mail),
                 ),
               ],

@@ -85,7 +85,10 @@ void main() {
     expect(kSnappySpring.stiffness, greaterThan(100));
     // 临界阻尼 ζ=1 → damping = 2*sqrt(mass*stiffness)。
     final critical = 2 * (kSnappySpring.mass * kSnappySpring.stiffness);
-    expect(kSnappySpring.damping * kSnappySpring.damping, closeTo(critical * 2, 1));
+    expect(
+      kSnappySpring.damping * kSnappySpring.damping,
+      closeTo(critical * 2, 1),
+    );
   });
 
   test('阻力系数随越界比例递减，且始终小于 iOS 默认', () {

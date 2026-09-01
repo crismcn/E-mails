@@ -63,7 +63,10 @@ class AuthInterceptor extends QueuedInterceptorsWrapper {
     try {
       // 强制刷新该账号 token 后带着新 token 重发一次。
       _tokenService.invalidate(email);
-      final token = await _tokenService.accessTokenFor(email, forceRefresh: true);
+      final token = await _tokenService.accessTokenFor(
+        email,
+        forceRefresh: true,
+      );
       options.headers['Authorization'] = 'Bearer $token';
       options.extra[_retriedKey] = true;
       final response = await _retryDio.fetch<dynamic>(options);

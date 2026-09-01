@@ -70,7 +70,8 @@ HealthService _service({
   return HealthService(
     authApi: authApi ?? _FakeAuthApi(token),
     userApi: userApi ?? _FakeUserApi(user),
-    credentialsStore: store ??
+    credentialsStore:
+        store ??
         InMemoryCredentialsStore(const [
           AccountCredentials(
             email: 'a@outlook.com',
@@ -86,7 +87,11 @@ void main() {
     final auth = _FakeAuthApi(_okToken);
     final user = _FakeUserApi(_okUser);
     final store = InMemoryCredentialsStore(const [
-      AccountCredentials(email: 'a@outlook.com', clientId: 'c', refreshToken: 'r'),
+      AccountCredentials(
+        email: 'a@outlook.com',
+        clientId: 'c',
+        refreshToken: 'r',
+      ),
     ]);
     final report = await _service(
       token: _okToken,
@@ -116,7 +121,11 @@ void main() {
   test('refresh_token 失效（invalid_grant → 401）→ 凭据失效，且不再打 /me', () async {
     final user = _FakeUserApi(_okUser);
     final store = InMemoryCredentialsStore(const [
-      AccountCredentials(email: 'a@outlook.com', clientId: 'c', refreshToken: 'r'),
+      AccountCredentials(
+        email: 'a@outlook.com',
+        clientId: 'c',
+        refreshToken: 'r',
+      ),
     ]);
     final report = await _service(
       token: const ApiResponse<TokenResult>.failure(
@@ -132,14 +141,19 @@ void main() {
     expect(report.message, 'invalid_grant');
     expect(user.calls, 0);
     // 凭据失效落盘为 Token 过期。
-    expect((await store.find('a@outlook.com'))!.status,
-        AccountCredentials.statusTokenExpired);
+    expect(
+      (await store.find('a@outlook.com'))!.status,
+      AccountCredentials.statusTokenExpired,
+    );
   });
 
-  test('换到 token 但 /me 401/403（账号未授权 User.Read）→ 仍判有效，只是缺账号信息',
-      () async {
+  test('换到 token 但 /me 401/403（账号未授权 User.Read）→ 仍判有效，只是缺账号信息', () async {
     final store = InMemoryCredentialsStore(const [
-      AccountCredentials(email: 'a@outlook.com', clientId: 'c', refreshToken: 'r'),
+      AccountCredentials(
+        email: 'a@outlook.com',
+        clientId: 'c',
+        refreshToken: 'r',
+      ),
     ]);
     final report = await _service(
       token: _okToken,
@@ -153,8 +167,10 @@ void main() {
     // 能换到 token 即账号可用；/me 读不到（多因未授权 User.Read）不改判。
     expect(report.isOk, isTrue);
     expect(report.displayName, isNull);
-    expect((await store.find('a@outlook.com'))!.status,
-        AccountCredentials.statusValid);
+    expect(
+      (await store.find('a@outlook.com'))!.status,
+      AccountCredentials.statusValid,
+    );
   });
 
   test('网络错误 → networkError（不判定为凭据失效）', () async {
@@ -201,8 +217,16 @@ void main() {
 
   test('批量检测 → 逐账号独立成败', () async {
     final store = InMemoryCredentialsStore(const [
-      AccountCredentials(email: 'a@outlook.com', clientId: 'c', refreshToken: 'r'),
-      AccountCredentials(email: 'b@outlook.com', clientId: 'c', refreshToken: 'r'),
+      AccountCredentials(
+        email: 'a@outlook.com',
+        clientId: 'c',
+        refreshToken: 'r',
+      ),
+      AccountCredentials(
+        email: 'b@outlook.com',
+        clientId: 'c',
+        refreshToken: 'r',
+      ),
     ]);
     final reports = await _service(
       token: _okToken,

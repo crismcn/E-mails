@@ -34,12 +34,14 @@ void main() {
     });
 
     test('写入后可读回，字段完整', () async {
-      await store.update(const AccountCredentials(
-        email: 'a@outlook.com',
-        clientId: 'cid',
-        refreshToken: 'RT1',
-        password: 'pw',
-      ));
+      await store.update(
+        const AccountCredentials(
+          email: 'a@outlook.com',
+          clientId: 'cid',
+          refreshToken: 'RT1',
+          password: 'pw',
+        ),
+      );
 
       final read = await store.find('a@outlook.com');
       expect(read, isNotNull);
@@ -51,9 +53,15 @@ void main() {
     test('凭据以密文外的独立键存储，可按前缀枚举邮箱', () async {
       await store.upsertAll([
         const AccountCredentials(
-            email: 'a@outlook.com', clientId: 'c', refreshToken: 'r'),
+          email: 'a@outlook.com',
+          clientId: 'c',
+          refreshToken: 'r',
+        ),
         const AccountCredentials(
-            email: 'b@outlook.com', clientId: 'c', refreshToken: 'r'),
+          email: 'b@outlook.com',
+          clientId: 'c',
+          refreshToken: 'r',
+        ),
       ]);
 
       final emails = await store.listEmails();
@@ -63,18 +71,28 @@ void main() {
     });
 
     test('refresh_token 轮换回写覆盖旧值', () async {
-      await store.update(const AccountCredentials(
-          email: 'a@outlook.com', clientId: 'c', refreshToken: 'old'));
-      final updated =
-          (await store.find('a@outlook.com'))!.copyWith(refreshToken: 'new');
+      await store.update(
+        const AccountCredentials(
+          email: 'a@outlook.com',
+          clientId: 'c',
+          refreshToken: 'old',
+        ),
+      );
+      final updated = (await store.find('a@outlook.com'))!
+          .copyWith(refreshToken: 'new');
       await store.update(updated);
 
       expect((await store.find('a@outlook.com'))!.refreshToken, 'new');
     });
 
     test('删除后读不到', () async {
-      await store.update(const AccountCredentials(
-          email: 'a@outlook.com', clientId: 'c', refreshToken: 'r'));
+      await store.update(
+        const AccountCredentials(
+          email: 'a@outlook.com',
+          clientId: 'c',
+          refreshToken: 'r',
+        ),
+      );
       await store.remove('a@outlook.com');
 
       expect(await store.find('a@outlook.com'), isNull);
@@ -82,15 +100,17 @@ void main() {
     });
 
     test('由导入记录持久化', () async {
-      await store.upsertAll([
-        const ImportedAccount(
-          email: 'a@outlook.com',
-          password: 'pw',
-          clientId: 'cid',
-          refreshToken: 'RT',
-          createdAt: '2026-08-27',
-        ),
-      ].map(AccountCredentials.fromImported));
+      await store.upsertAll(
+        [
+          const ImportedAccount(
+            email: 'a@outlook.com',
+            password: 'pw',
+            clientId: 'cid',
+            refreshToken: 'RT',
+            createdAt: '2026-08-27',
+          ),
+        ].map(AccountCredentials.fromImported),
+      );
 
       final read = await store.find('a@outlook.com');
       expect(read!.refreshToken, 'RT');
@@ -100,15 +120,17 @@ void main() {
     });
 
     test('状态与账号信息可落盘并回读，findAll 返回完整记录', () async {
-      await store.update(const AccountCredentials(
-        email: 'a@outlook.com',
-        clientId: 'c',
-        refreshToken: 'r',
-        status: AccountCredentials.statusValid,
-        displayName: '张三',
-        address: 'a@outlook.com',
-        userId: 'u-1',
-      ));
+      await store.update(
+        const AccountCredentials(
+          email: 'a@outlook.com',
+          clientId: 'c',
+          refreshToken: 'r',
+          status: AccountCredentials.statusValid,
+          displayName: '张三',
+          address: 'a@outlook.com',
+          userId: 'u-1',
+        ),
+      );
 
       final read = await store.find('a@outlook.com');
       expect(read!.status, AccountCredentials.statusValid);

@@ -18,7 +18,7 @@ abstract class SecureStorage {
 /// v11 默认即用 AES-GCM 加密，无需再设 `encryptedSharedPreferences`。
 class FlutterSecureStorageAdapter implements SecureStorage {
   FlutterSecureStorageAdapter([FlutterSecureStorage? storage])
-      : _storage = storage ?? const FlutterSecureStorage();
+    : _storage = storage ?? const FlutterSecureStorage();
 
   final FlutterSecureStorage _storage;
 
