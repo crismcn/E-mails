@@ -101,18 +101,23 @@ void main() {
   });
 
   group('配色', () {
-    test('暗色：整份反色 + 图片反回来，页面底色取 App 底色的反色', () {
+    test('暗色：只反正文容器 + 图片反回来，页面底色直接写 App 底色（不参与反色）', () {
       final html = build('<p>x</p>', dark: true).html;
-      expect(html, contains('html{filter:invert(1) hue-rotate(180deg)}'));
+      expect(html, contains('#$kMailRootId{filter:invert(1) hue-rotate(180deg)}'));
       expect(html, contains('img,video,picture,svg,canvas{filter:invert(1)'));
-      // #0a0d12 反过来是 #f5f2ed，反色滤镜再作用一次正好落回 App 底色。
-      expect(html, contains('html{background:#f5f2ed'));
+      // 关键：底色不靠反色去凑。曾经写 App 底色的反色（近白 #f5f2ed）等滤镜反回来，
+      // 浏览器先画背景后合成滤镜 → 中间几帧近白 = 暗色下加载时白闪一下。
+      expect(html, isNot(contains('html{filter:')));
+      expect(html, contains('html{background:#0a0d12!important'));
+      // 邮件写给 body 的白底在反色层外，照办就是暗页面上一大块白。
+      expect(html, contains('body{background:transparent!important}'));
     });
 
     test('亮色：不加滤镜，白底照发件人本意渲染', () {
       final html = build('<p>x</p>', dark: false).html;
       expect(html, isNot(contains('invert(1)')));
       expect(html, contains('html{background:#ffffff'));
+      expect(html, isNot(contains('background:transparent!important')));
     });
 
     test('长串不可断的文字会折行，不撑出横向滚动', () {

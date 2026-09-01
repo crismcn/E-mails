@@ -207,9 +207,33 @@ HTML 正文交给**系统 WebView**（`webview_flutter`，iOS WKWebView / Androi
   于是按屏宽排版、无视声明宽度，写死 600px 的邮件会横向溢出。必须显式
   `AndroidWebViewController.setUseWideViewPort(true)`（故直接依赖了 `webview_flutter_android`）。
   iOS 的 WKWebView 原生就认 viewport meta。
-- **暗色**：邮件都按白底黑字写，故暗色主题下整份文档 `filter: invert(1) hue-rotate(180deg)`，
-  图片再反一次抵消。已知取舍：白底 logo 仍是白块、元素的 `background-image` 会被反色、
-  深底设计的邮件会被反成亮底。要改姿态只动 `_kDarkFilter` 一处。
+- **暗色**：邮件都按白底黑字写，故暗色主题下给**正文容器** `#mail-root` 加
+  `filter: invert(1) hue-rotate(180deg)`，图片再反一次抵消。
+  - **滤镜刻意不加在 `html` 上**：那样页面底色得先写成 App 底色的**反色**（近白的
+    `#f5f2ed`）才能反回来，而浏览器**先画背景、后合成滤镜** —— 中间几帧照着近白画，
+    暗色下就是加载时**白闪一下**。现在 `html{background:<App 底色>!important}` 直接写真实
+    底色、不参与反色，任何时刻都是暗的。
+  - 配套 `body{background:transparent!important}`（仅暗色）：邮件常带
+    `<body style="background:#fff">`（嵌套 body 标签被解析器丢弃、属性并到文档 body 上），
+    而 body 在反色层**外面**，照办就是暗页面上一大块白。
+  - 已知取舍：白底 logo 仍是白块、元素的 `background-image` 会被反色、深底设计的邮件会被
+    反成亮底。要改姿态只动 `_kDarkFilter` 一处。
+- **加载遮罩（治暗色下的白闪）**：WebView 在文档 CSS 生效前会画自己的默认白底 ——
+  `setBackgroundColor(palette.background)` 挡不干净，暗色主题下就是一下白闪；加上首帧按
+  `_kInitialHeight = 160` 占位、量到高度后再跳一次版式，观感更差。故 WebView 上面盖一层
+  `palette.background` 的遮罩（`Stack` + `Positioned.fill`），**「文档加载完 + 已量到高度」
+  再压 `_kRevealSettle = 140ms` 才淡出**（240ms），露出来就是最终版式。
+  - 那 140ms 是留给合成的：`onPageFinished` 只说明文档加载完，WebView 把带样式（暗色下还带
+    反色滤镜）的首帧真正画到纹理上还要一两帧，早淡出就露出中间态。
+  - 淡出**只排一次**（`_revealScheduled`）—— 图片是陆续到的，每次高度增长都重排定时器会把
+    淡出一路推到兜底时间。
+  - **淡的是这层 Flutter 覆盖层，不是 WebView 的 `opacity`**：平台视图的透明度在 iOS 上
+    不保证生效（embedder 只稳定支持裁剪与变换）。
+  - **淡完整层移出树**：`CupertinoActivityIndicator` 留在 `opacity:0` 底下会一直空转、每帧
+    重绘（同 §4.6 那条坑，测试里还会让 `pumpAndSettle` 永不收敛）。故用
+    `AnimationController` + `AnimatedBuilder`，`isDismissed` 时返回 `SizedBox.shrink()`。
+  - **有兜底**：`_kRevealDeadline = 1500ms` 一到无条件淡出 —— 量高三条路全失败、或远程图片
+    把 `onPageFinished` 吊住时，绝不能把正文永远盖着。换主题重载文档时遮罩重新盖上。
 - **测试**：widget 测试环境没有平台视图，`MailHtmlView` 检测到 `WebViewPlatform.instance == null`
   就降级成 `MailHtmlUnavailable`（挂着生成好的文档供断言）。所以**HTML 正文在测试里不渲染、高度为 0**，
   要撑出滚动距离的用例必须用纯文本长邮件；多指手势、纹理尺寸、Hybrid Composition、原生滚动条

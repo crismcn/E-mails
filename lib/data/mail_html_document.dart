@@ -69,9 +69,10 @@ bool isSafeMailLink(String url) {
 /// - 不写 `user-scalable=no`，双指缩放可用（在固定高度的盒子内缩放 + 平移）。
 /// - 长串不可断的 URL 靠 `overflow-wrap: anywhere` 折行，不撑出横条。
 ///
-/// 配色：[dark] 时整份文档做反色（`invert` + `hue-rotate`），图片再反一次抵消 ——
-/// 邮件都是按白底黑字写的，这样能在不猜发件人配色的前提下保证文字始终可读，
-/// 版式与对比关系也留着（纯粹强制文字色会把按钮 / 底色块压平）。
+/// 配色：[dark] 时**正文容器**（`#mail-root`）做反色（`invert` + `hue-rotate`），图片再反
+/// 一次抵消 —— 邮件都是按白底黑字写的，这样能在不猜发件人配色的前提下保证文字始终可读，
+/// 版式与对比关系也留着（纯粹强制文字色会把按钮 / 底色块压平）。页面底色由 `html` 直接
+/// 写成 App 底色、**不参与反色**，否则滤镜生效前会闪一帧近白。
 MailHtmlDocument buildMailHtmlDocument(
   String body, {
   required String nonce,
@@ -84,8 +85,9 @@ MailHtmlDocument buildMailHtmlDocument(
   final viewport = wide
       ? 'width=${declared.round()}'
       : 'width=device-width, initial-scale=1';
-  // 反色后要落在 App 底色上，那页面底色就得先取它的反色。
-  final pageBackground = dark ? _invertHex(backgroundHex) : '#ffffff';
+  // 暗色下页面底色**直接写 App 底色**，不再靠反色滤镜去凑（那样得先写近白色的
+  // #f5f2ed，而浏览器先画背景、后合成滤镜 —— 中间几帧就是一下白闪）。
+  final pageBackground = dark ? backgroundHex : '#ffffff';
 
   return MailHtmlDocument(
     layoutScale: wide ? viewportWidth / declared : 1,
@@ -122,7 +124,9 @@ String mailHtmlNonce() {
 
 String _style({required bool dark, required String background}) =>
     ':root{color-scheme:light}'
-    'html{background:$background;-webkit-text-size-adjust:100%}'
+    // 暗色下这条底色是**防白闪的关键**，必须压得住邮件自带的 `html{background:#fff}`。
+    'html{background:$background${dark ? '!important' : ''};'
+    '-webkit-text-size-adjust:100%}'
     'body{margin:0;padding:12px 16px;color:#111;'
     'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;'
     'font-size:16px;line-height:1.55;overflow-wrap:anywhere}'
@@ -142,12 +146,21 @@ String _style({required bool dark, required String background}) =>
     '::-webkit-scrollbar{width:0;height:0}'
     '${dark ? _kDarkFilter : ''}';
 
-/// 反色一遍全文，图片 / 视频再反回来 —— 照片和 logo 的颜色才是对的。
+/// 反色一遍正文，图片 / 视频再反回来 —— 照片和 logo 的颜色才是对的。
+///
+/// **滤镜只作用在 `#mail-root`，不作用在 `html`**：曾经反的是整份文档，于是页面底色得
+/// 先写成 App 底色的**反色**（近白的 `#f5f2ed`）才能反回来 —— 而浏览器是先画背景、再
+/// 合成滤镜的，中间几帧就照着近白画，暗色下表现为**加载时白闪一下**。现在 `html` 直接
+/// 写真实底色，任何时刻都是暗的。
 ///
 /// 已知取舍：白底 logo 反两次仍是白底（暗页面上一块白），元素的
 /// `background-image` 没法单独反回来（会连带子节点），深底设计的邮件会被反成亮底。
 const String _kDarkFilter =
-    'html{filter:invert(1) hue-rotate(180deg)}'
+    '#$kMailRootId{filter:invert(1) hue-rotate(180deg)}'
+    // 邮件常带 `<body style="background:#fff">`（嵌套的 body 标签被解析器丢弃、属性
+    // 并到文档 body 上），而 body 在反色层**外面** —— 照办就是暗页面上一大块白。
+    // 暗色下底色一律由 html 提供。
+    'body{background:transparent!important}'
     'img,video,picture,svg,canvas{filter:invert(1) hue-rotate(180deg)}';
 
 /// 量正文高度、并顺带告诉宿主「WebView 内部现在还能不能纵向滚」。
@@ -192,12 +205,3 @@ String _heightProbe() =>
     // 再补几拍轮询兜底。
     'var n=0;var t=setInterval(function(){report();if(++n>10){'
     'clearInterval(t);}},300);})();';
-
-/// `#RRGGBB` 按通道取反 —— 给反色滤镜准备「反过来正好是 App 底色」的页面底色。
-String _invertHex(String hex) {
-  final v = hex.replaceFirst('#', '');
-  if (v.length != 6) return '#ffffff';
-  final n = int.tryParse(v, radix: 16);
-  if (n == null) return '#ffffff';
-  return '#${(0xFFFFFF - n).toRadixString(16).padLeft(6, '0')}';
-}

@@ -1,3 +1,4 @@
+import 'dart:async' show Timer;
 import 'dart:math' show min;
 
 import 'package:flutter/cupertino.dart';
@@ -32,6 +33,10 @@ import '../theme/app_palette.dart';
 ///
 /// 双指**永远**归 WebView（缩放 + 平移）。单指点击靠手势竞技场清算落到平台视图，
 /// 链接照样点得动。见 [_MultiTouchGestureRecognizer]。
+///
+/// **加载期间盖一层 App 底色的遮罩**：WebView 在 CSS 生效前会画自己的默认白底，暗色
+/// 主题下就是一下白闪；加上首帧占位高度与实测高度不同，还会跳一次版式。遮罩从第一帧
+/// 就盖住，等「文档加载完 + 量到高度」再淡出。
 class MailHtmlView extends StatefulWidget {
   const MailHtmlView({
     super.key,
@@ -52,9 +57,21 @@ class MailHtmlView extends StatefulWidget {
   @override
   State<MailHtmlView> createState() => _MailHtmlViewState();
 }
-class _MailHtmlViewState extends State<MailHtmlView> {
+class _MailHtmlViewState extends State<MailHtmlView>
+    with SingleTickerProviderStateMixin {
   /// 首帧的占位高度 —— 平台视图给 0 高度可能不初始化，先给一段再按实测替换。
   static const double _kInitialHeight = 160;
+
+  /// 遮罩淡出时长。
+  static const Duration _kRevealDuration = Duration(milliseconds: 240);
+
+  /// 条件满足后再多盖这么久 —— `onPageFinished` 只说明文档加载完，WebView 把带样式
+  /// （暗色下还带反色滤镜）的首帧真正合成到纹理上还要一两帧。早淡出就是一下闪动。
+  static const Duration _kRevealSettle = Duration(milliseconds: 140);
+
+  /// 遮罩最多盖这么久 —— 量高三条路全失败、或远程图片把 `onPageFinished` 吊着不放时
+  /// 的兜底，绝不能把正文永远盖着。
+  static const Duration _kRevealDeadline = Duration(milliseconds: 1500);
 
   /// 平台视图纹理的安全边（**物理**像素）。Android 的 `GL_MAX_TEXTURE_SIZE` 拿不到，
   /// 取一个几乎所有在跑 Flutter 的机型都能满足的值；盒子高度按它 ÷ dpr 夹住。
@@ -64,6 +81,20 @@ class _MailHtmlViewState extends State<MailHtmlView> {
   /// 每份文档一枚随机 nonce，且**在 State 里生成**：放进 build 会每次重建都换文档、
   /// 触发无意义的重新加载。
   final String _nonce = mailHtmlNonce();
+
+  /// 加载遮罩的不透明度：1 = 完全盖住（加载中），0 = 已露出正文。
+  late final AnimationController _cover = AnimationController(
+    vsync: this,
+    value: 1,
+    duration: _kRevealDuration,
+  );
+
+  /// 兜底淡出的定时器（见 [_kRevealDeadline]）。
+  Timer? _revealTimer;
+
+  bool _revealed = false;
+  bool _revealScheduled = false;
+  bool _pageFinished = false;
 
   /// 手势识别器只建一份 —— 每帧换新的 `Set` 会让平台视图反复重挂。
   late final Set<Factory<OneSequenceGestureRecognizer>> _gestures =
@@ -97,6 +128,13 @@ class _MailHtmlViewState extends State<MailHtmlView> {
     if (_controller != null && dark == _dark) return;
     _dark = dark;
     _load(palette);
+  }
+
+  @override
+  void dispose() {
+    _revealTimer?.cancel();
+    _cover.dispose();
+    super.dispose();
   }
 
   @override
@@ -134,7 +172,7 @@ class _MailHtmlViewState extends State<MailHtmlView> {
         ..setNavigationDelegate(
           NavigationDelegate(
             onNavigationRequest: _onNavigation,
-            onPageFinished: (_) => _measureFromHost(),
+            onPageFinished: (_) => _onPageFinished(),
           ),
         );
       // 滚动条不画（用户要求）—— 盒子等于内容高度时本来也不该出现，但放大之后
@@ -152,6 +190,39 @@ class _MailHtmlViewState extends State<MailHtmlView> {
     _document = document;
     _height = null;
     _canScrollInside = false;
+    // 重新盖上遮罩：换主题会重载文档，反色前的白底同样会闪一下。
+    _pageFinished = false;
+    _revealed = false;
+    _revealScheduled = false;
+    _cover.value = 1;
+    _revealTimer?.cancel();
+    _revealTimer = Timer(_kRevealDeadline, _reveal);
+  }
+
+  /// 文档加载完 —— 宿主侧补量一次高度，并看看够不够条件让遮罩淡出。
+  void _onPageFinished() {
+    _pageFinished = true;
+    _measureFromHost();
+    _maybeReveal();
+  }
+
+  /// 「文档加载完 + 已经量到高度」才排淡出：此时看到的就是最终版式，不会先给一眼
+  /// [_kInitialHeight] 的占位再跳一次。再压 [_kRevealSettle] 等首帧上纹理。
+  ///
+  /// 只排一次 —— 图片是陆续到的，每次高度增长都重排会把淡出一直推到兜底时间。
+  void _maybeReveal() {
+    if (_revealScheduled || !_pageFinished || _height == null) return;
+    _revealScheduled = true;
+    _revealTimer?.cancel();
+    _revealTimer = Timer(_kRevealSettle, _reveal);
+  }
+
+  /// 遮罩淡出，只做一次。
+  void _reveal() {
+    if (!mounted || _revealed) return;
+    _revealed = true;
+    _revealTimer?.cancel();
+    _cover.reverse();
   }
 
   /// Android WebView 默认 `useWideViewPort = false`，会**忽略** `viewport` meta ——
@@ -210,6 +281,7 @@ class _MailHtmlViewState extends State<MailHtmlView> {
     final height = min(scaled, _kMaxTexturePhysical / (ratio <= 0 ? 1 : ratio));
     if (_height != null && height <= _height! + 1) return;
     setState(() => _height = height);
+    _maybeReveal();
   }
 
   /// WebView 自己只加载我们塞进去的那份文档（`about:blank`）；其余一律不导航，
@@ -233,6 +305,7 @@ class _MailHtmlViewState extends State<MailHtmlView> {
     if (controller == null) {
       return MailHtmlUnavailable(document: document);
     }
+    final palette = context.palette;
     return SizedBox(
       height: _height ?? _kInitialHeight,
       child: Stack(
@@ -240,13 +313,33 @@ class _MailHtmlViewState extends State<MailHtmlView> {
           // 用默认的纹理合成（不开 Hybrid Composition）—— HC 能绕开纹理尺寸限制，
           // 但实测滚动明显卡顿；改成默认合成 + 高度上限。
           WebViewWidget(controller: controller, gestureRecognizers: _gestures),
-          if (_height == null)
-            Center(
-              child: CupertinoActivityIndicator(
-                radius: 12,
-                color: context.palette.textSecondary,
+          // 加载遮罩。**淡出的是这层 Flutter 覆盖层，不是 WebView 自己的
+          // `opacity`** —— 平台视图的透明度在 iOS 上不保证生效（embedder 只稳定支持
+          // 裁剪与变换），盖一层两端都靠得住。
+          //
+          // 淡完把整层**移出树**：`CupertinoActivityIndicator` 留在 `opacity:0` 下面
+          // 会一直空转，每帧都要重绘（测试里还会让 `pumpAndSettle` 永不收敛）。
+          Positioned.fill(
+            child: IgnorePointer(
+              child: AnimatedBuilder(
+                animation: _cover,
+                builder: (context, _) => _cover.isDismissed
+                    ? const SizedBox.shrink()
+                    : FadeTransition(
+                        opacity: _cover,
+                        child: ColoredBox(
+                          color: palette.background,
+                          child: Center(
+                            child: CupertinoActivityIndicator(
+                              radius: 12,
+                              color: palette.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ),
               ),
             ),
+          ),
         ],
       ),
     );
