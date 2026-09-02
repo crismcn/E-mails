@@ -313,9 +313,17 @@ HTML 正文交给**系统 WebView**（`webview_flutter`，iOS WKWebView / Androi
   一枚胶囊后面；输入框铺满行尾余量，顺带让胶囊右边那片空白也能点出光标。
   代价：地址长过余量时在框内横向滚动，不再独占一整行。折叠态输入框留在树上但不参与排版
   （零尺寸摆原点，`Offstage` 本来也不画它）。
-- **抄送 / 密送整行的显隐**：`_ccBccOpen = 有收件栏聚焦 || 抄送密送非空`。都空且失焦时三行
-  折叠成一行「抄送/密送, 发件人：<账号>」；否则展开抄送 / 密送 / 发件人三行。
-  已填过的抄送**绝不折叠** —— 那等于把收件人藏起来。
+- **抄送 / 密送整行的显隐**：`_ccBccOpen = 用户点过折叠行(_ccBccExpanded) || 抄送密送非空`。
+  抄送密送都空且没点开时，三行折叠成一行「抄送/密送, 发件人：<账号>」；**点这一行**（整行
+  是个 `GestureDetector`，= 设计稿的「发件人」列）才展开抄送 / 密送 / 发件人三行。
+  **刻意不看收件人有没有聚焦** —— 点收件人只为编辑收件人，历史上「聚焦收件人就顺带展开」
+  被用户反馈掉了。展开后若**没填任何内容、焦点又离开收件栏**则自动收回折叠行：监听
+  `FocusManager` 的 primary focus 变化（它是个 `ChangeNotifier`，focus 一挪就通知），帧末判定
+  —— 此刻 cc / bcc 的「未提交文字」可能刚被落成胶囊，帧末才能拿到最新状态；判定条件是
+  「无收件栏聚焦 && 抄送密送（胶囊 + 未提交文字）全空」。已填过的抄送 / 密送**绝不折叠**
+  —— 那等于把收件人藏起来。
+  折叠行的 `Key('compose-row-ccfrom')` 挪到 `GestureDetector` 上（它才是 Column 的直接子级，
+  反配对靠它这一层认）。
 - **两个 element 复用的坑**（都表现为「输入焦点被抢」，都靠 key 治）：
   - 输入框在三种形态里必须待在**同一个 `_ChipsInput` 的最后一格**且带 key，折叠态用
     `Offstage` 藏而不是移出树。让它在「直接子级」与容器内部之间搬家，`EditableText` 会被
@@ -331,6 +339,9 @@ HTML 正文交给**系统 WebView**（`webview_flutter`，iOS WKWebView / Androi
   `LayerLink` 贴的是**整块收件人内容区**（`_ChipsInput`）而不是输入框 —— 输入框只占行尾
   余量，贴它会得到一张又窄又从行中间起头的卡片。
 - **点胶囊**弹「删除 / 编辑 / 移至抄送 / 移至密送」（`showMenu` 贴着被点的那一枚）。
+  **样式与首页右上角「导入 / 设置」菜单一致**（同一份 `AppMenuRow` / `AppMenuDivider`，
+  见 `lib/widgets/app_menu.dart`）：底色 `palette.background` + 圆角 12 + 四周发散阴影，
+  选项「图标 + 文案」高 52 / 左右 20 边距 / 15 号字 / 字距 1.5，细线分隔缩进 20。
   「移至」只列另外两栏；「编辑」= 删胶囊 + 把地址放回输入框。同一地址在三栏间唯一
   （`ComposeContact` 按地址大小写不敏感判等）。
 - **发件人行只读**：本页从某账号的邮件列表进来，`sendMail` 也用这个账号鉴权，故设计稿上
@@ -406,7 +417,7 @@ lib/
   data/                     account_import / mail_mapper（纯函数）/ mail_html_document / compose_rich_text / mock_mails
   models/                   account.dart / mail.dart
   pages/                    home / import / mail_list / message_detail / compose / settings
-  widgets/                  stat_card / account_tile / mail_tile / app_refresh / segmented_selector / search_field / mail_html_view
+  widgets/                  stat_card / account_tile / mail_tile / app_refresh / segmented_selector / search_field / mail_html_view / app_menu
   theme/                    app_palette / app_icons / app_theme / app_scroll_behavior / app_page_route
   settings/                 settings_controller（ChangeNotifier + shared_preferences）
   l10n/                     app_zh.arb / app_en.arb + 生成的 AppLocalizations

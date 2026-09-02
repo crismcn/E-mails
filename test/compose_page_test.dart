@@ -159,7 +159,7 @@ void main() {
     );
 
     await _typeRecipient(tester, 'to', 'a@b.com');
-    // 展开后抄送 / 密送也各有一个「+」，按 key 点收件人那一个。
+    // 聚焦收件人不再展开抄送 / 密送，故此刻只有收件人这一个「+」；按 key 更稳妥。
     await tester.tap(find.byKey(const Key('compose-to-pick')));
     await tester.pumpAndSettle();
 
@@ -352,21 +352,30 @@ void main() {
     );
   });
 
-  testWidgets('抄送 / 密送：点收件人输入框才展开，都为空且失焦后收回折叠行', (WidgetTester tester) async {
+  testWidgets('抄送 / 密送：点发件人那行才展开，聚焦收件人不展开；空着失焦自动收回', (
+    WidgetTester tester,
+  ) async {
     await _pumpComposeOnly(tester);
 
     // 初始折叠成一行「抄送/密送, 发件人：」。
     expect(find.text('抄送/密送, 发件人：'), findsOneWidget);
     expect(find.text('抄　送：'), findsNothing);
 
+    // 聚焦收件人**不再**展开 —— 点收件人只为编辑收件人。
     await tester.tap(find.byKey(const Key('compose-to-field')));
+    await tester.pumpAndSettle();
+    expect(find.text('抄送/密送, 发件人：'), findsOneWidget);
+    expect(find.text('抄　送：'), findsNothing);
+
+    // 点折叠行（设计稿的「发件人」列）才展开抄送 / 密送 / 发件人三行。
+    await tester.tap(find.byKey(const Key('compose-row-ccfrom')));
     await tester.pumpAndSettle();
     expect(find.text('抄　送：'), findsOneWidget);
     expect(find.text('密　送：'), findsOneWidget);
     expect(find.text('发件人：'), findsOneWidget);
     expect(find.text('抄送/密送, 发件人：'), findsNothing);
 
-    // 焦点挪去正文、抄送密送都还空着 → 收回折叠行。
+    // 没填任何内容、焦点离开收件栏 → 自动收回折叠行。
     await tester.tap(find.byKey(const Key('compose-body-field')));
     await tester.pumpAndSettle();
     expect(find.text('抄送/密送, 发件人：'), findsOneWidget);
@@ -376,7 +385,8 @@ void main() {
   testWidgets('填了抄送 → 即使失焦也不折叠（否则等于把人藏起来）', (WidgetTester tester) async {
     await _pumpComposeOnly(tester);
 
-    await tester.tap(find.byKey(const Key('compose-to-field')));
+    // 点发件人行展开后填一个抄送。
+    await tester.tap(find.byKey(const Key('compose-row-ccfrom')));
     await tester.pumpAndSettle();
     await _typeRecipient(tester, 'cc', 'cc@qq.com');
     await tester.tap(find.byKey(const Key('compose-body-field')));
@@ -656,6 +666,9 @@ void main() {
     await _pumpCompose(tester, api);
 
     await _typeRecipient(tester, 'to', 'to@qq.com');
+    // 抄送 / 密送要先点发件人行展开才能输入。
+    await tester.tap(find.byKey(const Key('compose-row-ccfrom')));
+    await tester.pumpAndSettle();
     await _typeRecipient(tester, 'cc', 'cc@qq.com');
     await _typeRecipient(tester, 'bcc', 'bcc@qq.com');
     await tester.enterText(find.byKey(const Key('compose-body-field')), '正文');

@@ -18,6 +18,7 @@ import '../l10n/app_localizations.dart';
 import '../models/mail.dart';
 import '../theme/app_icons.dart';
 import '../theme/app_palette.dart';
+import '../widgets/app_menu.dart';
 
 /// 邮件重要性 —— 与 Graph `message.importance`（high / normal / low）一一对应。
 enum MailImportance { high, normal, low }
@@ -62,9 +63,12 @@ enum _ChipAction { delete, edit, toTo, toCc, toBcc }
 /// - **未聚焦且为空**：留着输入框，光标随时可落。
 /// 右侧 `+`（选系统联系人）只在**聚焦或该栏为空**时出现 —— 折叠成一行文字时设计稿没有它。
 ///
-/// **抄送 / 密送整行的显隐**：没在编辑收件人、且抄送密送都空时，三行折叠成一行
-/// 「抄送/密送, 发件人：<账号>」（`UI/发件人-无抄送&密送.jpg`）；一旦点进任一收件栏
-/// 或已填了抄送 / 密送，就展开成抄送 / 密送 / 发件人三行（`UI/发件人-点击发件人输入框.jpg`）。
+/// **抄送 / 密送整行的显隐**：抄送 / 密送都空、且用户没点开时，三行折叠成一行
+/// 「抄送/密送, 发件人：<账号>」（`UI/发件人-无抄送&密送.jpg`）；**点这一行**（设计稿里
+/// 的「发件人」列）或已填了抄送 / 密送，就展开成抄送 / 密送 / 发件人三行
+/// （`UI/发件人-点击发件人输入框.jpg`）。刻意不再让「聚焦收件人」触发展开 —— 点收件人
+/// 只为编辑收件人（用户反馈）；展开后没填任何内容、焦点又离开收件栏，会自动收回折叠行
+/// （监听 `FocusManager` 的 primary focus 变化，见 [_ComposePageState._onPrimaryFocusChanged]）。
 ///
 /// 排版工具栏：字号 / 加粗 / 斜体 / 下划线 / 颜色是**选区级**的 —— 选中一段再点，
 /// 只有那一段变（逐字格式表 + 自绘 `TextSpan`，见 [_RichBodyController]）；没有选区
@@ -116,8 +120,13 @@ class _ComposePageState extends State<ComposePage> {
     for (final field in _Field.values) field: LayerLink(),
   };
 
-  /// 当前聚焦的收件栏；null = 没在编辑收件人（此时抄送 / 密送可折叠）。
+  /// 当前聚焦的收件栏；null = 没在编辑收件人。
   _Field? _active;
+
+  /// 用户点过折叠行「抄送/密送, 发件人」后置 true —— 抄送 / 密送 / 发件人三行随之展开。
+  /// 与「聚焦收件人」解耦：点收件人只编辑收件人，不再顺带把这三行撑开（用户反馈）。
+  /// 展开后**没填任何内容、焦点又离开收件栏**时自动收回（[_onPrimaryFocusChanged]）。
+  bool _ccBccExpanded = false;
 
   /// 候选提示卡 —— 走 [Overlay]，不参与表单布局，弹出时不会把下面几行顶下去。
   OverlayEntry? _suggestionOverlay;
@@ -196,10 +205,14 @@ class _ComposePageState extends State<ComposePage> {
       _node[field]!.addListener(() => _onFocusChanged(field));
     }
     _body.addListener(_onBodyFormatChanged);
+    // 焦点一变化就检查「抄送 / 密送开着却没填东西」要不要收回 —— 点发件人行展开时
+    // 不带任何焦点事件，收回只能靠「焦点后来挪去别处」来察觉。
+    FocusManager.instance.addListener(_onPrimaryFocusChanged);
   }
 
   @override
   void dispose() {
+    FocusManager.instance.removeListener(_onPrimaryFocusChanged);
     _removeSuggestions();
     for (final field in _Field.values) {
       _input[field]!.dispose();
@@ -232,10 +245,12 @@ class _ComposePageState extends State<ComposePage> {
 
   /// 抄送 / 密送（以及独立的「发件人」行）要不要展开。
   ///
-  /// 在编辑收件人时展开（设计稿：点收件人输入框就展开），已填过抄送 / 密送时也必须
-  /// 展开 —— 否则填进去的人会被折叠行藏起来，等于凭空丢收件人。
+  /// 用户点过折叠行才展开（[_ccBccExpanded]）；已填过抄送 / 密送时也必须展开 —— 否则
+  /// 填进去的人会被折叠行藏起来，等于凭空丢收件人。**不看收件人有没有聚焦**：点收件人
+  /// 只为编辑收件人，不该顺带把这三行撑开（用户反馈）；展开后没填内容且失焦会自动收回
+  /// （[_onPrimaryFocusChanged]）。
   bool get _ccBccOpen =>
-      _active != null ||
+      _ccBccExpanded ||
       _picked[_Field.cc]!.isNotEmpty ||
       _picked[_Field.bcc]!.isNotEmpty;
 
@@ -265,6 +280,28 @@ class _ComposePageState extends State<ComposePage> {
       if (stillActive) return;
       _removeSuggestions();
       setState(() => _active = null);
+    });
+  }
+
+  /// 任意焦点变化（[FocusManager] 在 primary focus 变化时通知）→ 检查是否收回
+  /// 抄送 / 密送。判定放到帧末：此刻 cc / bcc 的「未提交文字」可能刚在 [_onFocusChanged]
+  /// 里被落成胶囊，帧末才能拿到最新状态。
+  void _onPrimaryFocusChanged() {
+    if (!_ccBccExpanded) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (!_ccBccExpanded) return;
+      // 收件人 / 抄送 / 密送里还有焦点 —— 可能正要往 cc / bcc 填，不收回。
+      if (_Field.values.any((field) => _node[field]!.hasFocus)) return;
+      // 填了东西（胶囊或未提交的文字）—— 收回等于把人藏起来，不收回。
+      if (_picked[_Field.cc]!.isNotEmpty || _picked[_Field.bcc]!.isNotEmpty) {
+        return;
+      }
+      if (_input[_Field.cc]!.text.trim().isNotEmpty ||
+          _input[_Field.bcc]!.text.trim().isNotEmpty) {
+        return;
+      }
+      setState(() => _ccBccExpanded = false);
     });
   }
 
@@ -430,21 +467,36 @@ class _ComposePageState extends State<ComposePage> {
     final action = await showMenu<_ChipAction>(
       context: context,
       position: position,
-      color: palette.card,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      color: palette.background,
+      surfaceTintColor: palette.background,
+      // 浅色、四周发散的柔和阴影 —— 与首页右上角「导入 / 设置」菜单一致。
+      elevation: 20,
+      shadowColor: const Color(0x4B000000),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       items: <PopupMenuEntry<_ChipAction>>[
-        _chipMenuItem(_ChipAction.delete, l10n.composeRecipientDelete, palette),
-        const PopupMenuDivider(height: 1),
-        _chipMenuItem(_ChipAction.edit, l10n.composeRecipientEdit, palette),
+        _chipMenuItem(
+          _ChipAction.delete,
+          AppIcons.delete,
+          l10n.composeRecipientDelete,
+          palette,
+        ),
+        const AppMenuDivider(),
+        _chipMenuItem(
+          _ChipAction.edit,
+          AppIcons.mailEdit,
+          l10n.composeRecipientEdit,
+          palette,
+        ),
         for (final target in _Field.values)
           if (target != field) ...[
-            const PopupMenuDivider(height: 1),
+            const AppMenuDivider(),
             _chipMenuItem(
               switch (target) {
                 _Field.to => _ChipAction.toTo,
                 _Field.cc => _ChipAction.toCc,
                 _Field.bcc => _ChipAction.toBcc,
               },
+              AppIcons.forward,
               switch (target) {
                 _Field.to => l10n.composeRecipientMoveToTo,
                 _Field.cc => l10n.composeRecipientMoveToCc,
@@ -481,24 +533,19 @@ class _ComposePageState extends State<ComposePage> {
     }
   }
 
+  /// 胶囊菜单的一项 —— 图标 + 文案，尺寸与首页「导入 / 设置」菜单一致（高 52、
+  /// 左右 20 边距），颜色随主题自适应。
   PopupMenuItem<_ChipAction> _chipMenuItem(
     _ChipAction action,
+    IconData icon,
     String label,
     AppPalette palette,
   ) {
     return PopupMenuItem<_ChipAction>(
       value: action,
-      height: 48,
-      child: Center(
-        child: Text(
-          label,
-          style: TextStyle(
-            color: palette.textPrimary,
-            fontSize: 16,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ),
+      height: 52,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      child: AppMenuRow(icon: icon, label: label, color: palette.textPrimary),
     );
   }
 
@@ -895,8 +942,8 @@ class _ComposePageState extends State<ComposePage> {
   Widget _buildFields(AppPalette palette, AppLocalizations l10n) {
     final valueStyle = TextStyle(
       color: palette.textPrimary,
-      fontSize: 16,
-      fontWeight: FontWeight.w600,
+      fontSize: 15,
+      fontWeight: FontWeight.w500,
     );
     return Column(
       children: [
@@ -916,15 +963,22 @@ class _ComposePageState extends State<ComposePage> {
             ),
           ),
         ] else
-          _FieldRow(
+          // 折叠态整行可点 —— 点它（= 设计稿的「发件人」列）才展开抄送 / 密送 / 发件人
+          // 三行。key 挪到 GestureDetector 上：它才是 Column 的直接子级，反配对靠它这一层
+          // 认（见 [_FieldRow] 注释）。
+          GestureDetector(
             key: const Key('compose-row-ccfrom'),
-            label: l10n.composeCcFrom,
-            child: Text(
-              widget.accountEmail,
-              textAlign: TextAlign.right,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: valueStyle,
+            behavior: HitTestBehavior.opaque,
+            onTap: () => setState(() => _ccBccExpanded = true),
+            child: _FieldRow(
+              label: l10n.composeCcFrom,
+              child: Text(
+                widget.accountEmail,
+                textAlign: TextAlign.right,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: valueStyle,
+              ),
             ),
           ),
         _FieldRow(
@@ -972,8 +1026,8 @@ class _ComposePageState extends State<ComposePage> {
     final collapsed = !focused && picked.isNotEmpty;
     final valueStyle = TextStyle(
       color: palette.textPrimary,
-      fontSize: 16,
-      fontWeight: FontWeight.w600,
+      fontSize: 15,
+      fontWeight: FontWeight.w500,
     );
 
     return _FieldRow(
@@ -1005,8 +1059,8 @@ class _ComposePageState extends State<ComposePage> {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: palette.primary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
@@ -1560,7 +1614,7 @@ class _FieldRow extends StatelessWidget {
         children: [
           Text(
             label,
-            style: TextStyle(color: palette.textSecondary, fontSize: 16),
+            style: TextStyle(color: palette.textSecondary, fontSize: 14),
           ),
           const SizedBox(width: 10),
           Expanded(child: child),
@@ -1744,7 +1798,7 @@ class _RecipientChip extends StatelessWidget {
           onTap: () => onTap(anchor),
           child: Container(
             constraints: const BoxConstraints(maxWidth: 240),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
               color: palette.card,
               borderRadius: BorderRadius.circular(999),
@@ -1755,7 +1809,7 @@ class _RecipientChip extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: palette.textPrimary,
-                fontSize: 16,
+                fontSize: 15,
                 fontWeight: FontWeight.w500,
               ),
             ),

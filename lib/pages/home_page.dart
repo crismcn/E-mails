@@ -10,6 +10,7 @@ import '../theme/app_icons.dart';
 import '../theme/app_palette.dart';
 import '../theme/app_scroll_behavior.dart';
 import '../widgets/account_tile.dart';
+import '../widgets/app_menu.dart';
 import '../widgets/app_refresh.dart';
 import '../widgets/search_field.dart';
 import '../widgets/stat_card.dart';
@@ -647,77 +648,22 @@ class _HeaderMenu extends StatelessWidget {
           value: 'import',
           height: 52,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-          child: _MenuRow(
+          child: AppMenuRow(
             icon: AppIcons.importFile,
             label: l10n.menuImport,
             color: menuText,
           ),
         ),
-        const _MenuDivider(),
+        const AppMenuDivider(),
         PopupMenuItem<String>(
           value: 'settings',
           height: 52,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-          child: _MenuRow(
+          child: AppMenuRow(
             icon: AppIcons.settings,
             label: l10n.menuSettings,
             color: menuText,
           ),
-        ),
-      ],
-    );
-  }
-}
-
-/// 菜单选项之间的分割线 —— 与邮箱列表分隔线保持一致（同色、细、左右缩进 20）。
-class _MenuDivider extends PopupMenuEntry<Never> {
-  const _MenuDivider();
-
-  @override
-  double get height => 1;
-
-  @override
-  bool represents(void value) => false;
-
-  @override
-  State<_MenuDivider> createState() => _MenuDividerState();
-}
-
-class _MenuDividerState extends State<_MenuDivider> {
-  @override
-  Widget build(BuildContext context) {
-    // 分隔线取主题列表分隔色，随明/暗切换，保持与邮箱列表一致的观感。
-    return Divider(
-      color: context.palette.divider,
-      height: 1,
-      thickness: 1,
-      indent: 20,
-      endIndent: 20,
-    );
-  }
-}
-
-/// 菜单项一行：图标 + 文案（颜色随主题自适应）。
-class _MenuRow extends StatelessWidget {
-  const _MenuRow({
-    required this.icon,
-    required this.label,
-    required this.color,
-  });
-
-  final IconData icon;
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(icon, color: color, size: 20),
-        const SizedBox(width: 8),
-        Text(
-          label,
-          style: TextStyle(color: color, fontSize: 15, letterSpacing: 1.5),
         ),
       ],
     );

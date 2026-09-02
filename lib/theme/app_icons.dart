@@ -147,14 +147,10 @@ class AppIcons {
   static const IconData settings = IconData(0xe69d, fontFamily: _font);
 
   /// 全选（勾 + 实心圆点，「都选上了」）。
-  ///
-  /// 这两个的造型**必须看图确认**，不能照 `iconfont.json` 的名字接：不同批次下载里
-  /// 名字变过好几轮（`checked-all` / `check-all` / 与 `deselect-all` 互换），而两个
-  /// 码点上的字形一直没变（0xe6c3 实心 = 全选，0xe6c2 空心 = 取消全选）。
-  static const IconData selectAll = IconData(0xe6c3, fontFamily: _font);
+  static const IconData selectAll = IconData(0xe6c2, fontFamily: _font);
 
-  /// 取消全选（勾 + 空心圆点，「都没选」）。见 [selectAll] 的说明。
-  static const IconData deselect = IconData(0xe6c2, fontFamily: _font);
+  /// 取消全选（勾 + 空心圆点，「都没选」）。
+  static const IconData deselect = IconData(0xe6c3, fontFamily: _font);
 
   // ---- iconfont 备用：字库里有、当前没用上 ----
 
