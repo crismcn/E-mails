@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,6 +12,7 @@ import 'package:email_manager/core/network/api_code.dart';
 import 'package:email_manager/core/network/api_response.dart';
 import 'package:email_manager/main.dart';
 import 'package:email_manager/settings/settings_controller.dart';
+import 'package:email_manager/widgets/search_field.dart';
 
 import 'fake_mail_api.dart';
 
@@ -58,6 +60,34 @@ void main() {
     expect(find.text('1'), findsNWidgets(2));
   });
 
+  testWidgets('首页与邮件列表的搜索框等高（共用 AppSearchField）', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    SharedPreferences.setMockInitialValues(const {});
+    final prefs = await SharedPreferences.getInstance();
+    await tester.pumpWidget(
+      EmailManagerApp(
+        settings: SettingsController(prefs),
+        api: ApiService.create(
+          credentialsStore: InMemoryCredentialsStore(const [_kAlice]),
+          mailApi: FakeMailApi(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 量渲染出来的输入框本身：两页曾各写一份，首页被外层 `SizedBox` 夹到 34、
+    // 邮件列表按内容自然撑到 35（系统字号放大后差距还会跟着变大）。
+    final home = tester.getSize(find.byType(TextField)).height;
+    expect(home, AppSearchField.kHeight);
+
+    await tester.tap(find.text('alice@outlook.com'));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(find.byType(TextField)).height, home);
+  });
+
   testWidgets('首屏加载失败：整页展示原始错误 + 重试可恢复', (WidgetTester tester) async {
     final failing = FakeMailApi(
       failure: const ApiResponse<GraphMessagePage>.failure(
@@ -95,6 +125,63 @@ void main() {
 
     expect(find.text('Cursor Team'), findsOneWidget);
     expect(find.text('Claude'), findsNothing);
+  });
+
+  testWidgets('搜索框：有输入才出清除按钮，点一下清空并复位过滤', (WidgetTester tester) async {
+    await _pumpMailList(tester, FakeMailApi());
+
+    // 空输入时不该有叉（它本身就是「有东西可清」的信号）。
+    expect(find.byIcon(AppIcons.close), findsNothing);
+
+    await tester.enterText(find.byType(EditableText).last, 'cursor');
+    await tester.pumpAndSettle();
+    expect(find.text('Claude'), findsNothing);
+
+    await tester.tap(find.byIcon(AppIcons.close));
+    await tester.pumpAndSettle();
+
+    // 输入框清空、过滤复位（onChanged('') 已回调给页面），叉一并收回。
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller?.text,
+      '',
+    );
+    expect(find.text('Claude'), findsOneWidget);
+    expect(find.text('Cursor Team'), findsOneWidget);
+    expect(find.byIcon(AppIcons.close), findsNothing);
+    // 清除按钮不能把搜索框顶高。
+    expect(
+      tester.getSize(find.byType(TextField)).height,
+      AppSearchField.kHeight,
+    );
+  });
+
+  testWidgets('首屏加载：转圈落在整页垂直正中（不按列表区居中）', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    SharedPreferences.setMockInitialValues(const {});
+    final prefs = await SharedPreferences.getInstance();
+    await tester.pumpWidget(
+      EmailManagerApp(
+        settings: SettingsController(prefs),
+        api: ApiService.create(
+          credentialsStore: InMemoryCredentialsStore(const [_kAlice]),
+          mailApi: FakeMailApi()..listMessagesHangs = true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('alice@outlook.com'));
+    // 转圈一直转 —— `pumpAndSettle` 永不收敛，只 pump 到路由转场结束。
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // 原来只在标题栏 + 搜索框**下方**那块列表区里居中，看着明显偏下。
+    final page = tester.getRect(find.byType(Scaffold).last);
+    final spinner = tester.getRect(find.byType(CupertinoActivityIndicator));
+    expect(spinner.center.dy, closeTo(page.center.dy, 0.5));
   });
 
   testWidgets('上滑加载更多：按已加载条数续拉下一页并追加', (WidgetTester tester) async {

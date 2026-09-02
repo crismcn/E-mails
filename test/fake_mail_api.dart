@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
@@ -73,8 +74,16 @@ class FakeMailApi extends MailApi {
   /// 记录每次列表请求的 `$skip`，用于断言翻页参数。
   final List<int> skips = <int>[];
 
+  /// listMessages 是否永不返回（模拟慢网）—— 让邮件列表停在「首屏加载中」那一态，
+  /// 供断言加载转圈的位置。
+  bool listMessagesHangs = false;
+
   /// 记录每次列表请求的文件夹，用于断言抽屉切换。
   final List<MailFolder> folders = <MailFolder>[];
+
+  /// getMessage 是否永不返回（模拟慢网）—— 让详情页停在「正文懒取中」那一态，
+  /// 供断言加载转圈的位置。
+  bool getMessageHangs = false;
 
   /// 记录 getMessage 请求过的 id。
   final List<String> fetchedIds = <String>[];
@@ -90,6 +99,8 @@ class FakeMailApi extends MailApi {
     ({
       String email,
       List<String> to,
+      List<String> cc,
+      List<String> bcc,
       String subject,
       String body,
       bool isHtml,
@@ -133,6 +144,9 @@ class FakeMailApi extends MailApi {
   }) async {
     skips.add(skip);
     folders.add(folder);
+    if (listMessagesHangs) {
+      return Completer<ApiResponse<GraphMessagePage>>().future;
+    }
     final failed = failure;
     if (failed != null) return failed;
     // 未读视图按 isRead 过滤，其余文件夹直接返回内存数据切片。
@@ -162,6 +176,7 @@ class FakeMailApi extends MailApi {
   @override
   Future<ApiResponse<GraphMessage>> getMessage(String email, String id) async {
     fetchedIds.add(id);
+    if (getMessageHangs) return Completer<ApiResponse<GraphMessage>>().future;
     final full = fullMessages[id];
     if (full != null) return ApiResponse<GraphMessage>.success(full);
     // 未预置全文的：回退到列表/会话里同 id 的消息（无 body）。
@@ -242,6 +257,8 @@ class FakeMailApi extends MailApi {
     required List<String> to,
     required String subject,
     required String body,
+    List<String> cc = const <String>[],
+    List<String> bcc = const <String>[],
     bool isHtml = false,
     String importance = 'normal',
     List<MailAttachment> attachments = const <MailAttachment>[],
@@ -249,6 +266,8 @@ class FakeMailApi extends MailApi {
     sentMails.add((
       email: email,
       to: to,
+      cc: cc,
+      bcc: bcc,
       subject: subject,
       body: body,
       isHtml: isHtml,

@@ -22,6 +22,7 @@ MailPreview mailPreviewFromGraph(GraphMessage message, {DateTime? now}) {
     id: message.id,
     conversationId: message.conversationId,
     sender: _sender(message),
+    senderAddress: message.from,
     subject: _subject(message),
     time: received == null
         ? ''

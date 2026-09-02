@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -20,8 +21,8 @@ class MailHtmlDocumentMatcher {
   String get html {
     final finder = find.byType(MailHtmlUnavailable);
     expect(finder, findsOneWidget);
-    final document = (finder.evaluate().single.widget as MailHtmlUnavailable)
-        .document;
+    final document =
+        (finder.evaluate().single.widget as MailHtmlUnavailable).document;
     expect(document, isNotNull);
     return document!.html;
   }
@@ -253,5 +254,20 @@ void main() {
     expect(tester.getTopLeft(find.byIcon(AppIcons.back)).dy, headerBefore);
     expect(tester.getTopLeft(find.text('回复')).dy, actionBefore);
     expect(find.byType(SizeTransition), findsNothing);
+  });
+
+  testWidgets('正文懒取中：转圈落在内容区垂直正中', (WidgetTester tester) async {
+    final api = FakeMailApi()..getMessageHangs = true;
+    await _pumpList(tester, api);
+    await tester.tap(find.text('Claude'));
+    // 转圈会一直转 —— `pumpAndSettle` 永不收敛，只 pump 到路由转场结束。
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // 内容区 = 返回栏与底部操作栏之间那块（滚动视图铺满它）。
+    final content = tester.getRect(find.byType(SingleChildScrollView).last);
+    final spinner = tester.getRect(find.byType(CupertinoActivityIndicator));
+    // 原来转圈紧跟在元信息下面（贴着收件人那几行、偏上一大截），现在浮在正中。
+    expect(spinner.center.dy, closeTo(content.center.dy, 0.5));
   });
 }

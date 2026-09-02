@@ -41,7 +41,8 @@ class MessageDetailPage extends StatefulWidget {
   State<MessageDetailPage> createState() => _MessageDetailPageState();
 }
 
-class _MessageDetailPageState extends State<MessageDetailPage> {
+class _MessageDetailPageState extends State<MessageDetailPage>
+    with SingleTickerProviderStateMixin {
   late bool _starred = widget.message.isFlagged;
 
   /// 标星写回进行中 —— 去重，避免连点发出多次 PATCH。
@@ -52,6 +53,17 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
 
   /// 正文懒取中 —— 尚无全文时展示占位转圈。
   bool _loadingBody = false;
+
+  /// 「正文还看不到」时浮在内容区正中那个转圈的不透明度。
+  ///
+  /// **懒取全文与正文 WebView 渲染两段共用同一个转圈**：之前是两段各画一个（页面画
+  /// 懒取那个、[MailHtmlView] 在遮罩里画渲染那个），交接处有一两帧谁都没画 ——
+  /// Android 上平台视图首帧还要几十毫秒，看着就是**闪一下**。
+  ///
+  /// 用控制器只为跟正文遮罩**同步淡出**（同一时长 [MailHtmlView.kRevealDuration]）；
+  /// `dismissed` 时整层移出树，否则转圈会在 `opacity:0` 下面一直空转、每帧重绘
+  /// （CLAUDE.md §4.6）。
+  late final AnimationController _spinner;
 
   // ---- 附件 ----
 
@@ -84,6 +96,19 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
     if (widget.message.id.isNotEmpty && widget.message.htmlBody == null) {
       _loadingBody = true;
     }
+    _spinner = AnimationController(
+      vsync: this,
+      duration: MailHtmlView.kRevealDuration,
+      // 正文要走 WebView 的话遮罩会接着盖住，故一开始就把转圈亮着 —— 等
+      // [MailHtmlView] 回报（帧末）中间就空了一帧。
+      value: _loadingBody || widget.message.htmlBody != null ? 1 : 0,
+    );
+  }
+
+  @override
+  void dispose() {
+    _spinner.dispose();
+    super.dispose();
   }
 
   @override
@@ -106,6 +131,9 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
       }
       _loadingBody = false;
     });
+    // 纯文本正文（含取全文失败）没有 WebView 遮罩接手，转圈就此淡出；HTML 则等
+    // [MailHtmlView] 回报「遮罩淡了」，见 [_onBodyCoverChanged]。
+    if (_message.htmlBody == null) _spinner.reverse();
     // 带附件才多打一次附件列表请求（内嵌图也会让 hasAttachments 为 true，
     // 过滤后可能仍是空列表 —— 那就什么都不显示）。
     if (res.isSuccess && (res.data?.hasAttachments ?? false)) {
@@ -253,6 +281,16 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
     }
   }
 
+  /// 正文遮罩起落 —— 转圈跟着它亮 / 跟着它淡（时长相同，见 [_spinner]）。
+  void _onBodyCoverChanged(bool covered) {
+    if (!mounted) return;
+    if (covered) {
+      _spinner.value = 1;
+    } else {
+      _spinner.reverse();
+    }
+  }
+
   /// 打开正文中的链接（超链接 / 按钮）—— 外部浏览器，失败时提示。
   ///
   /// 只放行 http/https/mailto/tel：正文是发件人可控的，`javascript:` 或自定义
@@ -293,22 +331,55 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
               onStar: _toggleStar,
             ),
             // 整页一条滚动条：收件人 / 主题 / 日期 / 附件 / 正文一起上滑。
+            //
+            // 外面套 `LayoutBuilder` 只为拿内容区的可见高度：正文 WebView 的加载
+            // 遮罩期要按它占位（量到真实高度前先占满一屏，见 [MailHtmlView]）。
             Expanded(
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              child: LayoutBuilder(
+                builder: (context, box) => Stack(
+                  // `expand`：滚动视图仍像原来那样铺满内容区（默认 loose 会让它
+                  // 按内容缩，短邮件时下半截就点不着、滑不动）。
+                  fit: StackFit.expand,
                   children: [
-                    _MetaSection(
-                      message: message,
-                      attachments: _attachments,
-                      expanded: _attachExpanded,
-                      bytes: _attachBytes,
-                      busy: _attachBusy,
-                      onToggle: _toggleAttachments,
-                      onOpen: _openAttachment,
-                      onDownload: _downloadAttachment,
+                    SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _MetaSection(
+                            message: message,
+                            attachments: _attachments,
+                            expanded: _attachExpanded,
+                            bytes: _attachBytes,
+                            busy: _attachBusy,
+                            onToggle: _toggleAttachments,
+                            onOpen: _openAttachment,
+                            onDownload: _downloadAttachment,
+                          ),
+                          _body(palette, message, box.maxHeight),
+                        ],
+                      ),
                     ),
-                    _body(palette, message),
+                    // 「正文还看不到」时的转圈 —— 浮在**内容区正中**，懒取全文与正文
+                    // 渲染两段共用它、中间不落幕（见 [_spinner]）。排在元信息下面时
+                    // 它会贴着收件人那几行，看着像挂在页面上三分之一处。
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: AnimatedBuilder(
+                          animation: _spinner,
+                          builder: (context, _) => _spinner.isDismissed
+                              ? const SizedBox.shrink()
+                              : FadeTransition(
+                                  opacity: _spinner,
+                                  child: Center(
+                                    child: CupertinoActivityIndicator(
+                                      radius: 12,
+                                      color: palette.textSecondary,
+                                    ),
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -324,8 +395,12 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
   ///
   /// HTML 交给 [MailHtmlView]：**按页内量到的高度占位、自己不滚**，双指在这块固定
   /// 高度里缩放 + 平移。纯文本仍是 Flutter 的可选择文本。
-  Widget _body(AppPalette palette, MailMessage message) {
+  ///
+  /// [viewportHeight] 是内容区的可见高度，只用来给 [MailHtmlView] 的加载遮罩定占位高度。
+  Widget _body(AppPalette palette, MailMessage message, double viewportHeight) {
     if (_loadingBody) {
+      // 转圈由页面浮在内容区正中（见 build），这里只把已有的预览文字先摆出来。
+      if (message.body.isEmpty) return const SizedBox.shrink();
       return Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
         child: _BodyLoading(preview: message.body),
@@ -338,7 +413,9 @@ class _MessageDetailPageState extends State<MessageDetailPage> {
         builder: (context, constraints) => MailHtmlView(
           html: html,
           viewportWidth: constraints.maxWidth,
+          viewportHeight: viewportHeight,
           onTapUrl: _openUrl,
+          onCoverChanged: _onBodyCoverChanged,
         ),
       );
     }
@@ -822,7 +899,8 @@ class _RecipientRow extends StatelessWidget {
   }
 }
 
-/// 正文懒取中 —— 先展示已有预览文字 + 一行转圈，避免整页空白。
+/// 正文懒取中已有的预览文字 —— 转圈不在这里：它由页面浮在**内容区正中**
+/// （见 `_MessageDetailPageState.build`），跟在预览文字后面会贴着元信息、偏上一大截。
 class _BodyLoading extends StatelessWidget {
   const _BodyLoading({required this.preview});
 
@@ -831,26 +909,13 @@ class _BodyLoading extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (preview.isNotEmpty)
-          Text(
-            preview,
-            style: TextStyle(
-              color: palette.textSecondary,
-              fontSize: 16,
-              height: 1.55,
-            ),
-          ),
-        const SizedBox(height: 16),
-        Center(
-          child: CupertinoActivityIndicator(
-            radius: 12,
-            color: palette.textSecondary,
-          ),
-        ),
-      ],
+    return Text(
+      preview,
+      style: TextStyle(
+        color: palette.textSecondary,
+        fontSize: 16,
+        height: 1.55,
+      ),
     );
   }
 }

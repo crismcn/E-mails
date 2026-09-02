@@ -42,8 +42,9 @@
 |---|---|---|
 | 首页 / 账号总览 | `lib/pages/home_page.dart` | 三统计卡 + 账号列表；吸顶头部（标题上滑被汇总覆盖后固定）；长按进多选，底部操作栏（健康检测 / 删除 / 全选）；右上角「…」菜单 → 导入 / 设置 |
 | 导入邮箱 | `lib/pages/import_page.dart` | CSV 文件导入 + 文本粘贴导入；格式说明卡；底部「确认导入」落安全存储 |
-| 邮件列表 | `lib/pages/mail_list_page.dart` | 某账号的 Graph 真实收件箱；下拉刷新 / 上滑翻页（`$skip`）；左滑归档 / 已读 / 删除；点击进详情并自动标已读 |
-| 邮件详情 | `lib/pages/message_detail_page.dart` | 单封邮件；懒取全文；**整页一条滚动条**——固定的返回栏 / `Expanded` 里一条滚动视图（收件人 / 主题 / 日期 / 附件 / 正文一起上滑，HTML 交给按内容高度占位的 WebView，见 §5.5）/ 固定的底部操作栏；顶 / 底栏**不随滑动收起**（收放会让 WebView 重排、正反馈跳动）；附件条（收起显示「N 个附件 + 总大小」，展开出图片预览与文件行，点击交给系统应用打开、打不开转下载） |
+| 邮件列表 | `lib/pages/mail_list_page.dart` | 某账号的 Graph 真实收件箱；下拉刷新 / 上滑翻页（`$skip`）；左滑归档 / 已读 / 删除；点击进详情并自动标已读；首屏转圈浮在整页正中（见 §4.7） |
+| 邮件详情 | `lib/pages/message_detail_page.dart` | 单封邮件；懒取全文与正文渲染**共用一个**转圈，浮在内容区正中（见 §4.7）；**整页一条滚动条**——固定的返回栏 / `Expanded` 里一条滚动视图（收件人 / 主题 / 日期 / 附件 / 正文一起上滑，HTML 交给按内容高度占位的 WebView，见 §5.5）/ 固定的底部操作栏；顶 / 底栏**不随滑动收起**（收放会让 WebView 重排、正反馈跳动）；附件条（收起显示「N 个附件 + 总大小」，展开出图片预览与文件行，点击交给系统应用打开、打不开转下载） |
+| 新建邮件 | `lib/pages/compose_page.dart` | 顶栏（返回 / 附件 / 发送）+ 表单（收件人 / 抄送 / 密送 / 发件人 / 重要性 / 主题）+ 附件条 + 正文 + 底部两条工具栏（排版栏 / 撤销·重做·Aa·图片）；**表单与正文同在一条滚动条里**（`CustomScrollView`，正文走 `SliverFillRemaining(hasScrollBody:false)`）；收件人交互见 §5.6 |
 | 设置 | `lib/pages/settings_page.dart` | 主题（跟随系统 / 暗黑 / 亮白）+ 语言（中文 / English），分段控件切换，即时持久化 |
 
 > 设计稿（仓库根）：`邮件列表.jpg`、`邮件列表消息.jpg`、`邮件详情.jpg`、`长按操作.jpg`。新页面要求 **1:1 还原设计稿**。
@@ -90,7 +91,16 @@
 
 ### 4.3 字号与间距（2026-08-27 收紧后的尺度）
 - 首页标题 22、统计卡数字 24 / 标签 12、列表主文本 16、次要文本 14、小字 12、搜索框 14。
-- 首页吸顶头部三段高度 62 / 66 / 42；多选顶栏高度常量 `_kSelTopBarHeight` 必须 == 标题条 `_titleBand`（62），二者靠此抵消保证进出多选净高不跳。
+- 首页吸顶头部三段高度 62 / 66 / 44（第三段 = `AppSearchField.kHeight` 36 + 下间距 8）；
+  多选顶栏高度常量 `_kSelTopBarHeight` 必须 == 标题条 `_titleBand`（62），二者靠此抵消保证进出多选净高不跳。
+- **搜索框只有一份**：`lib/widgets/search_field.dart` 的 `AppSearchField`（胶囊形、放大镜 19、
+  文字 14），首页与邮件列表共用，高度写死 `kHeight = 36`。两页曾各写一份 —— 首页被外层
+  `SizedBox` 夹到 34、邮件列表按内容自然撑到 35，**系统字号放大后差距还会跟着变大**
+  （一个被夹住不动、一个跟着长）。左右边距（都是 20）由调用方给。
+  - **输入非空时右侧出清除按钮**（叉 15）：点一下清空并回调 `onChanged('')`，
+    调用方的过滤条件跟着复位（`TextField.onChanged` 不为程序性修改触发，得手动回调）。
+    文本控制器由组件自己持有；`suffixIconConstraints` 必须放开最小尺寸 —— 用
+    `IconButton` 那套 48×48 会把胶囊顶破 `kHeight`。
 
 ### 4.4 滚动手感（约定：轻微且迅速的回弹）
 - 全局 `lib/theme/app_scroll_behavior.dart` 的 `SmallBounceScrollBehavior`（挂 `MaterialApp.scrollBehavior`），物理 `_SnappyBouncePhysics`：小幅过冲 + 干脆收口（比 iOS 默认更硬）。
@@ -108,6 +118,27 @@
   1. **收起时整体不入树**：`build` 开头 `if (state.offset <= 0) return const SizedBox.shrink();`，否则 `CupertinoActivityIndicator` 常驻空转 → 所有 `pumpAndSettle` 超时。
   2. **`processedDuration` 是一次性 Timer**：测试触发刷新 / 加载后需额外 `await tester.pump(const Duration(milliseconds: 400))`，否则报「Timer still pending」。
 - 子 `ListView` **不要显式设 `physics`**（会盖掉全局回弹）。
+
+### 4.7 加载转圈的位置
+- 一屏之内的等待，转圈**落在可见区域垂直正中**，不要排在已有内容后面、也不要只按
+  「剩下那块」居中。两处都踩过：
+  - 邮件详情页的懒取转圈原来跟在元信息下面，看着像挂在页面上三分之一处；现在用
+    `Stack(fit: StackFit.expand)` + `Positioned.fill` + `Center` 浮在内容区（返回栏与
+    底部操作栏之间那块）正中。`StackFit.expand` 是必需的 —— 默认 loose 会让里面的滚动
+    视图按内容缩，短邮件时下半截点不着、滑不动。这一页上下两条栏高度相当，内容区正中
+    与屏幕正中基本重合。
+  - 邮件列表的首屏转圈原来在**搜索框下面那块列表区**里居中 —— 上面压着标题栏 + 搜索框
+    近 120、下面没有对称的底栏抵消，实测落在 452 而屏幕正中是 390，看着明显偏下。
+    改成整页级浮层（`SafeArea` 下的 `Stack` + `Positioned.fill` + `Center`），列表区那支
+    只留 `SizedBox.shrink()`。`SafeArea(bottom: false)` 是为了让列表滚到屏幕最底，故浮层
+    自己减掉 `MediaQuery.viewPaddingOf(context).bottom`，否则中线被手势条压低半个 inset。
+- **一次等待只能有一个转圈，中间不许落幕**：详情页「懒取全文 → 正文 WebView 渲染」是
+  两段，曾各画一个（页面画懒取那个、`MailHtmlView` 在遮罩里画渲染那个），交接处有一两帧
+  谁都没画 —— Android 上平台视图首帧还要几十毫秒，看着就是**闪一下**。现在整个等待只有
+  页面那一个转圈，正文遮罩只负责底色，起落靠 `MailHtmlView.onCoverChanged` 通知（详见 §5.5）。
+- **测试里不能对着转圈 `pumpAndSettle`**（永不收敛，同 §4.6）：`pump()` 走完路由转场即断言。
+  同理，转圈淡出后必须整层**移出树**（`isDismissed → SizedBox.shrink()`），留在 `opacity:0`
+  下面会一直空转、每帧重绘，`pumpAndSettle` 也永不收敛。
 
 ---
 
@@ -219,25 +250,64 @@ HTML 正文交给**系统 WebView**（`webview_flutter`，iOS WKWebView / Androi
   - 已知取舍：白底 logo 仍是白块、元素的 `background-image` 会被反色、深底设计的邮件会被
     反成亮底。要改姿态只动 `_kDarkFilter` 一处。
 - **加载遮罩（治暗色下的白闪）**：WebView 在文档 CSS 生效前会画自己的默认白底 ——
-  `setBackgroundColor(palette.background)` 挡不干净，暗色主题下就是一下白闪；加上首帧按
-  `_kInitialHeight = 160` 占位、量到高度后再跳一次版式，观感更差。故 WebView 上面盖一层
-  `palette.background` 的遮罩（`Stack` + `Positioned.fill`），**「文档加载完 + 已量到高度」
-  再压 `_kRevealSettle = 140ms` 才淡出**（240ms），露出来就是最终版式。
+  `setBackgroundColor(palette.background)` 挡不干净，暗色主题下就是一下白闪。故 WebView
+  上面盖一层 `palette.background` 的遮罩（`Stack` + `Positioned.fill`），**「文档加载完 +
+  已量到高度」再压 `_kRevealSettle = 140ms` 才淡出**（`kRevealDuration = 240ms`），
+  露出来就是最终版式。
+  - **遮罩只画底色，转圈由详情页画**：整段等待（懒取全文 → 正文渲染）只能有一个转圈，
+    见 §4.7。遮罩起落用 `onCoverChanged(bool)` 通知宿主，宿主的转圈按同一时长
+    （`MailHtmlView.kRevealDuration`）一起淡出。**通知要排到帧末** —— 一个调用点是
+    `didChangeDependencies`（换主题重载），此刻宿主正在构建，直接回调会撞上
+    「setState() called during build」。测试环境没有平台视图、根本没有遮罩，
+    那条分支要立刻回报 `false`，否则宿主的转圈永远挂着（`pumpAndSettle` 直接超时）。
+  - **遮罩期间盒子至少占满 `viewportHeight`**（详情页传进来的内容区可见高度）：免掉
+    「先给一段短占位、量到高度再跳一次版式」（那是 `_kInitialHeight = 160` 的旧账，已删）。
+    **淡完**（`_coverGone`，靠 `_cover` 的状态监听）才把盒子交回实测高度 —— 用「开始淡出」
+    的话，实测高度比一屏矮的短邮件会在淡出**期间**收盒子，WebView 视口跟着变小、文档重排，
+    那一下正好透过半透明的遮罩被看见。量不到高度就退回一屏高。
   - 那 140ms 是留给合成的：`onPageFinished` 只说明文档加载完，WebView 把带样式（暗色下还带
     反色滤镜）的首帧真正画到纹理上还要一两帧，早淡出就露出中间态。
   - 淡出**只排一次**（`_revealScheduled`）—— 图片是陆续到的，每次高度增长都重排定时器会把
     淡出一路推到兜底时间。
   - **淡的是这层 Flutter 覆盖层，不是 WebView 的 `opacity`**：平台视图的透明度在 iOS 上
     不保证生效（embedder 只稳定支持裁剪与变换）。
-  - **淡完整层移出树**：`CupertinoActivityIndicator` 留在 `opacity:0` 底下会一直空转、每帧
-    重绘（同 §4.6 那条坑，测试里还会让 `pumpAndSettle` 永不收敛）。故用
-    `AnimationController` + `AnimatedBuilder`，`isDismissed` 时返回 `SizedBox.shrink()`。
   - **有兜底**：`_kRevealDeadline = 1500ms` 一到无条件淡出 —— 量高三条路全失败、或远程图片
     把 `onPageFinished` 吊住时，绝不能把正文永远盖着。换主题重载文档时遮罩重新盖上。
 - **测试**：widget 测试环境没有平台视图，`MailHtmlView` 检测到 `WebViewPlatform.instance == null`
   就降级成 `MailHtmlUnavailable`（挂着生成好的文档供断言）。所以**HTML 正文在测试里不渲染、高度为 0**，
   要撑出滚动距离的用例必须用纯文本长邮件；多指手势、纹理尺寸、Hybrid Composition、原生滚动条
   都碰不到，**缩放与变形 / 卡死只能真机验**。
+
+### 5.6 新建邮件页的收件人三栏
+
+设计稿在 `UI/` 下（`收件人-输入提示.jpg`、`收件人-多收件人.jpg`、`收件人-收件人编辑.jpg`、
+`发件人-点击发件人输入框.jpg`、`发件人-无抄送&密送.jpg`），要求 1:1。
+
+- **三种形态**（每栏独立判定）：聚焦 → 灰色胶囊 + 行尾输入框；未聚焦且已填 → 折叠成一行
+  主色文字（点一下回到聚焦）；未聚焦且为空 → 留着输入框。右侧 `+`（选系统联系人）
+  只在**聚焦或该栏为空**时出现 —— 五张设计稿同时满足这一条。
+- **抄送 / 密送整行的显隐**：`_ccBccOpen = 有收件栏聚焦 || 抄送密送非空`。都空且失焦时三行
+  折叠成一行「抄送/密送, 发件人：<账号>」；否则展开抄送 / 密送 / 发件人三行。
+  已填过的抄送**绝不折叠** —— 那等于把收件人藏起来。
+- **两个 element 复用的坑**（都表现为「输入焦点被抢」，都靠 key 治）：
+  - 输入框在三种形态里必须待在**同一个 `Wrap` 的最后一格**且带 key，折叠态用 `Offstage`
+    藏而不是移出树。让它在「直接子级」与「Wrap 内」之间搬家，`EditableText` 会被重建 ——
+    **点一下输入框，键盘刚起来又立刻收回**。
+  - `_FieldRow` 每行都要带 key。抄送 / 密送整行会增删，行数一变，无 key 的兄弟就按下标
+    重新配对：主题那行的 `EditableText` 被当成另一个 widget 重建、焦点被踢掉，焦点作用域
+    又把焦点还给上一个聚焦过的节点（收件人）—— 表现为**在主题里打字，字进了收件人**。
+- **输入提示**：候选池是**当前账号收件箱已加载的发件人**（`MailPreview.senderAddress` +
+  `sender`，由邮件列表页按地址去重后传进来）。刻意不读系统通讯录（要 `READ_CONTACTS` 全量
+  读）、不额外打接口。按最后一段输入模糊匹配名称或地址，已填过的人不再提示，最多 4 条。
+  提示卡走 **`Overlay` + `LayerLink`**：排进 `Column` 会把下面几行往下顶，每敲一个字表单
+  都跳一次。它不受视口裁剪，故滚动时（`ScrollUpdateNotification`）主动收掉。
+- **点胶囊**弹「删除 / 编辑 / 移至抄送 / 移至密送」（`showMenu` 贴着被点的那一枚）。
+  「移至」只列另外两栏；「编辑」= 删胶囊 + 把地址放回输入框。同一地址在三栏间唯一
+  （`ComposeContact` 按地址大小写不敏感判等）。
+- **发件人行只读**：本页从某账号的邮件列表进来，`sendMail` 也用这个账号鉴权，故设计稿上
+  那个 ▾ 没做成账号切换（换发件人要换 token / 可能撞上未授权 `Mail.Send`）。
+- 抄送 / 密送随发信一起下发（`MailApi.sendMail` 的 `cc` / `bcc` → Graph
+  `ccRecipients` / `bccRecipients`，空列表不下发该字段），三栏地址都过一遍格式校验。
 
 ---
 
@@ -267,8 +337,8 @@ lib/
     storage/                secure_storage 抽象
   data/                     account_import / mail_mapper（纯函数）/ mail_html_document / mock_mails
   models/                   account.dart / mail.dart
-  pages/                    home / import / mail_list / message_detail / settings
-  widgets/                  stat_card / account_tile / mail_tile / app_refresh / segmented_selector / mail_html_view
+  pages/                    home / import / mail_list / message_detail / compose / settings
+  widgets/                  stat_card / account_tile / mail_tile / app_refresh / segmented_selector / search_field / mail_html_view
   theme/                    app_palette / app_icons / app_theme / app_scroll_behavior / app_page_route
   settings/                 settings_controller（ChangeNotifier + shared_preferences）
   l10n/                     app_zh.arb / app_en.arb + 生成的 AppLocalizations
@@ -294,7 +364,7 @@ api-test/                   Node 换 token 脚本（gitignore，不入库）
 
 ### 9.1 提交前必做
 1. `flutter analyze` —— 必须**零问题**。
-2. `flutter test` —— 全量通过（当前约 74–77 用例区间，随功能增减）。
+2. `flutter test` —— 全量通过（当前 141 个用例，随功能增减）。
 3. 改了 arb 文案 → `flutter gen-l10n`。
 4. 尽快 commit（历史上曾整套 MVP 文件丢失、无 commit，务必防再次丢失）。
 

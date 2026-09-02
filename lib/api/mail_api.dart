@@ -470,11 +470,14 @@ class MailApi {
   /// 成功时 Graph 返回 **202 Accepted 且响应体为空**，故解析器忽略 body 直接返回 true。
   /// [importance] 取 `high` / `normal` / `low`；[isHtml] 决定正文 contentType。
   /// [attachments] 为小附件（base64 内嵌），空列表时不下发 `attachments` 字段。
+  /// [cc] / [bcc] 同理 —— 空列表时不下发对应字段（Graph 允许缺省）。
   Future<ApiResponse<bool>> sendMail(
     String email, {
     required List<String> to,
     required String subject,
     required String body,
+    List<String> cc = const <String>[],
+    List<String> bcc = const <String>[],
     bool isHtml = false,
     String importance = 'normal',
     List<MailAttachment> attachments = const <MailAttachment>[],
@@ -496,6 +499,20 @@ class MailApi {
                 'emailAddress': <String, dynamic>{'address': address},
               },
           ],
+          if (cc.isNotEmpty)
+            'ccRecipients': [
+              for (final address in cc)
+                <String, dynamic>{
+                  'emailAddress': <String, dynamic>{'address': address},
+                },
+            ],
+          if (bcc.isNotEmpty)
+            'bccRecipients': [
+              for (final address in bcc)
+                <String, dynamic>{
+                  'emailAddress': <String, dynamic>{'address': address},
+                },
+            ],
           if (attachments.isNotEmpty)
             'attachments': [for (final a in attachments) a.toJson()],
         },

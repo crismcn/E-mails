@@ -15,6 +15,7 @@ import '../theme/app_palette.dart';
 import '../theme/app_scroll_behavior.dart';
 import '../widgets/app_refresh.dart';
 import '../widgets/mail_tile.dart';
+import '../widgets/search_field.dart';
 import 'compose_page.dart';
 import 'message_detail_page.dart';
 
@@ -354,9 +355,28 @@ class _MailListPageState extends State<MailListPage>
   }
 
   /// 打开新建邮件页 —— 以当前账号为发件人。
+  ///
+  /// 顺手把**已加载列表里的发件人**（名称 + 地址，按地址去重）传过去当收件人输入提示的
+  /// 候选池：不额外打接口、不读系统通讯录，翻了几页就有几页的人。
   void _openCompose() {
+    final seen = <String>{};
+    final suggestions = <ComposeContact>[];
+    for (final mail in _items) {
+      final address = mail.senderAddress.trim();
+      if (address.isEmpty || !seen.add(address.toLowerCase())) continue;
+      // sender 拿不到显示名时映射层会填占位符「—」，那种就只留地址。
+      final name = mail.sender == kUnknownSender ? '' : mail.sender;
+      suggestions.add(
+        ComposeContact(address: address, name: name == address ? '' : name),
+      );
+    }
     Navigator.of(context).push(
-      appRoute<void>((_) => ComposePage(accountEmail: widget.accountEmail)),
+      appRoute<void>(
+        (_) => ComposePage(
+          accountEmail: widget.accountEmail,
+          suggestions: suggestions,
+        ),
+      ),
     );
   }
 
@@ -381,42 +401,75 @@ class _MailListPageState extends State<MailListPage>
       ),
       body: SafeArea(
         bottom: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Stack(
+          fit: StackFit.expand,
           children: [
-            _Header(
-              folderLabel: _folderLabel(l10n, _folder),
-              email: widget.accountEmail,
-              unread: _headerUnread,
-              drawerAnim: _drawerCtrl,
-              onToggleDrawer: _toggleDrawer,
-              onCopy: _copyEmail,
-            ),
-            // 抽屉与遮罩浮在搜索框 + 列表之上（不遮标题，标题仍可点击收起）。
-            Expanded(
-              child: Stack(
-                children: [
-                  Column(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _Header(
+                  folderLabel: _folderLabel(l10n, _folder),
+                  email: widget.accountEmail,
+                  unread: _headerUnread,
+                  drawerAnim: _drawerCtrl,
+                  onToggleDrawer: _toggleDrawer,
+                  onCopy: _copyEmail,
+                ),
+                // 抽屉与遮罩浮在搜索框 + 列表之上（不遮标题，标题仍可点击收起）。
+                Expanded(
+                  child: Stack(
                     children: [
-                      const SizedBox(height: 8),
-                      _SearchBox(onChanged: (v) => setState(() => _query = v)),
-                      const SizedBox(height: 8),
-                      Expanded(child: _buildBody()),
+                      Column(
+                        children: [
+                          const SizedBox(height: 8),
+                          // 只过滤**已加载**的邮件（本地过滤），不发起服务端搜索：
+                          // Graph 的 `$search` 与 `$orderby` 互斥，混用会打乱按时间倒序。
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            child: AppSearchField(
+                              hintText: l10n.mailSearchHint,
+                              onChanged: (v) => setState(() => _query = v),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Expanded(child: _buildBody()),
+                        ],
+                      ),
+                      _FolderDrawer(
+                        anim: _drawerCtrl,
+                        current: _folder,
+                        unread: _drawerUnread,
+                        flaggedCount: _folder == MailFolder.flagged
+                            ? _items.length
+                            : null,
+                        onSelect: _selectFolder,
+                        onClose: _closeDrawer,
+                      ),
                     ],
                   ),
-                  _FolderDrawer(
-                    anim: _drawerCtrl,
-                    current: _folder,
-                    unread: _drawerUnread,
-                    flaggedCount: _folder == MailFolder.flagged
-                        ? _items.length
-                        : null,
-                    onSelect: _selectFolder,
-                    onClose: _closeDrawer,
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
+            // 首屏转圈浮在**整页正中**（CLAUDE.md §4.7）：按下方列表区居中会明显偏下
+            // —— 上面压着标题栏 + 搜索框近 120，下面没有对称的底栏来抵消。
+            if (_firstLoading)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Padding(
+                    // `SafeArea(bottom: false)` 是为了让列表能滚到屏幕最底；转圈得自己
+                    // 让开系统手势条，否则中线被压低半个 inset。
+                    padding: EdgeInsets.only(
+                      bottom: MediaQuery.viewPaddingOf(context).bottom,
+                    ),
+                    child: Center(
+                      child: CupertinoActivityIndicator(
+                        radius: 13,
+                        color: palette.textSecondary,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -431,16 +484,12 @@ class _MailListPageState extends State<MailListPage>
         MailFolder.sent => l10n.folderSent,
       };
 
-  /// 三态：首屏转圈 / 空列表下的整页错误 / 正常列表（含空态占位）。
+  /// 三态：首屏加载 / 空列表下的整页错误 / 正常列表（含空态占位）。
+  ///
+  /// 首屏那个转圈**不在这里** —— 它由 `build` 浮在整页正中（列表区上面压着标题栏 +
+  /// 搜索框，按这块区域居中会偏下）。
   Widget _buildBody() {
-    if (_firstLoading) {
-      return Center(
-        child: CupertinoActivityIndicator(
-          radius: 13,
-          color: context.palette.textSecondary,
-        ),
-      );
-    }
+    if (_firstLoading) return const SizedBox.shrink();
     if (_error != null && _items.isEmpty) {
       return _ErrorView(message: _error!, onRetry: _reload);
     }
@@ -777,64 +826,6 @@ class _ErrorView extends StatelessWidget {
               const SizedBox(height: 16),
               TextButton(onPressed: onRetry, child: Text(l10n.commonRetry)),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 搜索框 —— 胶囊形（两端半圆）。
-///
-/// 只过滤**已加载**的邮件（本地过滤），不发起服务端搜索：Graph 的 `$search`
-/// 与 `$orderby` 互斥，混用会打乱按时间倒序的列表。
-class _SearchBox extends StatelessWidget {
-  const _SearchBox({required this.onChanged});
-
-  final ValueChanged<String> onChanged;
-
-  static const BorderRadius _pillRadius = BorderRadius.all(
-    Radius.circular(100),
-  );
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final l10n = AppLocalizations.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
-      child: TextField(
-        onChanged: onChanged,
-        style: TextStyle(color: palette.textPrimary, fontSize: 14),
-        cursorColor: palette.primary,
-        textInputAction: TextInputAction.search,
-        decoration: InputDecoration(
-          isDense: true,
-          filled: true,
-          fillColor: palette.card,
-          hintText: l10n.mailSearchHint,
-          hintStyle: TextStyle(color: palette.textSecondary, fontSize: 14),
-          prefixIcon: Icon(
-            AppIcons.search,
-            color: palette.textSecondary,
-            size: 19,
-          ),
-          prefixIconConstraints: const BoxConstraints(
-            minWidth: 36,
-            minHeight: 0,
-          ),
-          contentPadding: const EdgeInsets.fromLTRB(4, 7, 12, 7),
-          border: const OutlineInputBorder(
-            borderRadius: _pillRadius,
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: const OutlineInputBorder(
-            borderRadius: _pillRadius,
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: const OutlineInputBorder(
-            borderRadius: _pillRadius,
-            borderSide: BorderSide.none,
           ),
         ),
       ),

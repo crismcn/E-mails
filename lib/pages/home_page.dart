@@ -11,6 +11,7 @@ import '../theme/app_palette.dart';
 import '../theme/app_scroll_behavior.dart';
 import '../widgets/account_tile.dart';
 import '../widgets/app_refresh.dart';
+import '../widgets/search_field.dart';
 import '../widgets/stat_card.dart';
 import 'import_page.dart';
 import 'mail_list_page.dart';
@@ -459,8 +460,8 @@ class _HomeHeaderDelegate extends SliverPersistentHeaderDelegate {
   /// 汇总条高度（上间距 6 + 数值 24 + 间距 5 + 标签 12 + 下间距 16 ≈ 63，留余量取 66）。
   static const double _statsBand = 66;
 
-  /// 搜索条高度（输入框 34 + 下间距 8）。
-  static const double _searchBand = 42;
+  /// 搜索条高度（输入框 [AppSearchField.kHeight] + 下间距 8）。
+  static const double _searchBand = AppSearchField.kHeight + 8;
 
   /// 吸顶后保留的高度 —— 汇总 + 搜索框。
   static const double _pinnedBand = _statsBand + _searchBand;
@@ -508,7 +509,14 @@ class _HomeHeaderDelegate extends SliverPersistentHeaderDelegate {
                   ),
                 ),
                 _StatsRow(total: total, valid: valid, error: error),
-                _SearchBox(onChanged: onQueryChanged),
+                // 高度合计正好是 _searchBand —— 吸顶头部按它算 extent。
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                  child: AppSearchField(
+                    hintText: AppLocalizations.of(context).searchHint,
+                    onChanged: onQueryChanged,
+                  ),
+                ),
               ],
             ),
           ),
@@ -787,68 +795,6 @@ class _StatsRow extends StatelessWidget {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-// __REST3__
-/// 搜索框 —— 规则椭圆（胶囊/stadium，两端半圆），按邮箱号过滤。
-///
-/// 固定高度（含底部间距 8），供吸顶头部计算 extent。
-class _SearchBox extends StatelessWidget {
-  const _SearchBox({required this.onChanged});
-
-  final ValueChanged<String> onChanged;
-
-  /// 规则椭圆：四角同等大圆角，得到两端半圆的胶囊形。
-  static const BorderRadius _pillRadius = BorderRadius.all(
-    Radius.circular(100),
-  );
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final l10n = AppLocalizations.of(context);
-    return SizedBox(
-      height: 42,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-        child: TextField(
-          onChanged: onChanged,
-          style: TextStyle(color: palette.textPrimary, fontSize: 14),
-          cursorColor: palette.primary,
-          textInputAction: TextInputAction.search,
-          decoration: InputDecoration(
-            isDense: true,
-            filled: true,
-            fillColor: palette.card,
-            hintText: l10n.searchHint,
-            hintStyle: TextStyle(color: palette.textSecondary, fontSize: 14),
-            prefixIcon: Icon(
-              AppIcons.search,
-              color: palette.textSecondary,
-              size: 19,
-            ),
-            prefixIconConstraints: const BoxConstraints(
-              minWidth: 36,
-              minHeight: 0,
-            ),
-            contentPadding: const EdgeInsets.fromLTRB(4, 7, 12, 7),
-            border: const OutlineInputBorder(
-              borderRadius: _pillRadius,
-              borderSide: BorderSide.none,
-            ),
-            enabledBorder: const OutlineInputBorder(
-              borderRadius: _pillRadius,
-              borderSide: BorderSide.none,
-            ),
-            focusedBorder: const OutlineInputBorder(
-              borderRadius: _pillRadius,
-              borderSide: BorderSide.none,
-            ),
-          ),
         ),
       ),
     );

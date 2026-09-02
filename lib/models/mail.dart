@@ -8,6 +8,7 @@ class MailPreview {
     required this.time,
     this.id = '',
     this.conversationId = '',
+    this.senderAddress = '',
     this.unread = 0,
     this.count = 0,
   });
@@ -21,6 +22,11 @@ class MailPreview {
 
   /// 发件人显示名。
   final String sender;
+
+  /// 发件人邮箱地址（Graph `from.emailAddress.address`）—— 显示名之外还留着它，
+  /// 新建邮件页的收件人输入提示要按「名称 + 邮箱」在已加载列表里模糊匹配。
+  /// mock 数据可能留空。
+  final String senderAddress;
 
   /// 第二行：主题 / 正文摘要。
   final String subject;
@@ -39,6 +45,7 @@ class MailPreview {
     String? id,
     String? conversationId,
     String? sender,
+    String? senderAddress,
     String? subject,
     String? time,
     int? unread,
@@ -48,6 +55,7 @@ class MailPreview {
       id: id ?? this.id,
       conversationId: conversationId ?? this.conversationId,
       sender: sender ?? this.sender,
+      senderAddress: senderAddress ?? this.senderAddress,
       subject: subject ?? this.subject,
       time: time ?? this.time,
       unread: unread ?? this.unread,
@@ -129,6 +137,41 @@ class MailMessage {
       isFlagged: isFlagged ?? this.isFlagged,
     );
   }
+}
+
+/// 一个可填进收件人 / 抄送 / 密送的联系人 —— 名称可空，地址必填。
+///
+/// 两处用它：新建邮件页里已填好的每个「收件人胶囊」，以及输入时的候选提示项。
+/// 候选来自**当前账号收件箱已加载的发件人**（[MailPreview.sender] +
+/// [MailPreview.senderAddress]），不读系统通讯录、不额外打接口。
+@immutable
+class ComposeContact {
+  const ComposeContact({required this.address, this.name = ''});
+
+  /// 邮箱地址 —— 真正发出去的东西。
+  final String address;
+
+  /// 显示名，可能为空（列表里只拿到地址时）。
+  final String name;
+
+  /// 胶囊 / 折叠态上显示的文字 —— 有名字显名字，没名字退回地址。
+  String get label => name.isEmpty ? address : name;
+
+  /// 模糊匹配：名称或地址包含 [query]（不分大小写）。
+  bool matches(String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return false;
+    return address.toLowerCase().contains(q) || name.toLowerCase().contains(q);
+  }
+
+  /// 同一地址视为同一人（大小写不敏感）—— 去重与「已添加则不再提示」都靠它。
+  @override
+  bool operator ==(Object other) =>
+      other is ComposeContact &&
+      other.address.toLowerCase() == address.toLowerCase();
+
+  @override
+  int get hashCode => address.toLowerCase().hashCode;
 }
 
 /// 头像柔和底色候选 —— 与设计稿观感一致（紫 / 粉 / 青 / 蓝 / 橙）。

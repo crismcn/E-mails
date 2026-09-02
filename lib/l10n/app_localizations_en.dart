@@ -31,6 +31,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get mailSearchHint => 'Search mail';
 
   @override
+  String get searchClear => 'Clear';
+
+  @override
   String refreshLastUpdated(String time) {
     return 'Last updated: $time';
   }
@@ -94,7 +97,34 @@ class AppLocalizationsEn extends AppLocalizations {
   String get composeTo => 'To:';
 
   @override
+  String get composeCc => 'Cc:';
+
+  @override
+  String get composeBcc => 'Bcc:';
+
+  @override
+  String get composeFrom => 'From:';
+
+  @override
   String get composeCcFrom => 'Cc/Bcc, From:';
+
+  @override
+  String get composeRecipientDelete => 'Delete';
+
+  @override
+  String get composeRecipientEdit => 'Edit';
+
+  @override
+  String get composeRecipientMoveToTo => 'Move to To';
+
+  @override
+  String get composeRecipientMoveToCc => 'Move to Cc';
+
+  @override
+  String get composeRecipientMoveToBcc => 'Move to Bcc';
+
+  @override
+  String get composeRecipientOptions => 'Recipient options';
 
   @override
   String get composeImportance => 'Importance:';

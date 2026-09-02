@@ -11,6 +11,7 @@ import 'package:email_manager/core/auth/credentials_store.dart';
 import 'package:email_manager/core/contacts/contact_picker.dart';
 import 'package:email_manager/l10n/app_localizations.dart';
 import 'package:email_manager/main.dart';
+import 'package:email_manager/models/mail.dart';
 import 'package:email_manager/pages/compose_page.dart';
 import 'package:email_manager/settings/settings_controller.dart';
 import 'package:email_manager/theme/app_theme.dart';
@@ -49,14 +50,15 @@ Future<void> _pumpCompose(WidgetTester tester, FakeMailApi mailApi) async {
   await tester.pumpAndSettle();
 }
 
-/// 直接挂一个 [ComposePage]，注入假的联系人选择器。
+/// 直接挂一个 [ComposePage]，注入假的联系人选择器与输入提示候选池。
 ///
 /// 选联系人本身走平台通道（widget 测试碰不到），故只把「选完之后」的逻辑
 /// 抽成注入点来验证：多地址二次选择、拼进收件人框、各种失败提示。
 Future<void> _pumpComposeWithPicker(
   WidgetTester tester,
-  ContactEmailPicker picker,
-) async {
+  ContactEmailPicker picker, {
+  List<ComposeContact> suggestions = const <ComposeContact>[],
+}) async {
   tester.view.physicalSize = const Size(1080, 2340);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.resetPhysicalSize);
@@ -70,10 +72,34 @@ Future<void> _pumpComposeWithPicker(
       supportedLocales: AppLocalizations.supportedLocales,
       home: ComposePage(
         accountEmail: 'alice@outlook.com',
+        suggestions: suggestions,
         contactPicker: picker,
       ),
     ),
   );
+  await tester.pumpAndSettle();
+}
+
+/// 没有联系人选择需求时的简写 —— 选择器一律返回「取消」。
+Future<void> _pumpComposeOnly(
+  WidgetTester tester, {
+  List<ComposeContact> suggestions = const <ComposeContact>[],
+}) {
+  return _pumpComposeWithPicker(
+    tester,
+    () async => const ContactPick(ContactPickStatus.cancelled),
+    suggestions: suggestions,
+  );
+}
+
+/// 往某一栏敲一个地址并落成胶囊（回车即提交，等价于用户敲 Enter）。
+Future<void> _typeRecipient(
+  WidgetTester tester,
+  String fieldName,
+  String address,
+) async {
+  await tester.enterText(find.byKey(Key('compose-$fieldName-field')), address);
+  await tester.testTextInput.receiveAction(TextInputAction.done);
   await tester.pumpAndSettle();
 }
 
@@ -93,7 +119,7 @@ void main() {
     expect(json['contentBytes'], base64Encode(const <int>[1, 2, 3, 250]));
   });
 
-  testWidgets('收件人右侧按钮：选到联系人的唯一邮箱 → 填进收件人框', (WidgetTester tester) async {
+  testWidgets('收件人右侧按钮：选到联系人的唯一邮箱 → 落成一个胶囊', (WidgetTester tester) async {
     await _pumpComposeWithPicker(
       tester,
       () async =>
@@ -103,33 +129,44 @@ void main() {
     await tester.tap(find.byIcon(AppIcons.add));
     await tester.pumpAndSettle();
 
-    final to = tester.widget<TextField>(
-      find.byKey(const Key('compose-to-field')),
+    // 地址不再是输入框里的一段文字，而是一枚可点开菜单的胶囊。
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('compose-row-to')),
+        matching: find.text('bob@qq.com'),
+      ),
+      findsOneWidget,
     );
-    expect(to.controller?.text, 'bob@qq.com');
+    expect(
+      tester
+          .widget<TextField>(
+            find.byKey(const Key('compose-to-field'), skipOffstage: false),
+          )
+          .controller
+          ?.text,
+      isEmpty,
+    );
   });
 
-  testWidgets('已有收件人时再选联系人 → 用「; 」追加', (WidgetTester tester) async {
+  testWidgets('已有收件人时再选联系人 → 两枚胶囊并列，不是拼成一串文字', (WidgetTester tester) async {
     await _pumpComposeWithPicker(
       tester,
       () async =>
           const ContactPick(ContactPickStatus.picked, emails: ['c@d.com']),
     );
 
-    await tester.enterText(
-      find.byKey(const Key('compose-to-field')),
-      'a@b.com',
-    );
-    await tester.tap(find.byIcon(AppIcons.add));
+    await _typeRecipient(tester, 'to', 'a@b.com');
+    // 展开后抄送 / 密送也各有一个「+」，按 key 点收件人那一个。
+    await tester.tap(find.byKey(const Key('compose-to-pick')));
     await tester.pumpAndSettle();
 
-    final to = tester.widget<TextField>(
-      find.byKey(const Key('compose-to-field')),
-    );
-    expect(to.controller?.text, 'a@b.com; c@d.com');
+    expect(find.text('a@b.com'), findsOneWidget);
+    expect(find.text('c@d.com'), findsOneWidget);
+    // 旧实现是「a@b.com; c@d.com」一整串，现在各自成胶囊。
+    expect(find.text('a@b.com; c@d.com'), findsNothing);
   });
 
-  testWidgets('联系人有多个邮箱 → 弹层二次选择，选中的那个才填进去', (WidgetTester tester) async {
+  testWidgets('联系人有多个邮箱 → 弹层二次选择，选中的那个才落成胶囊', (WidgetTester tester) async {
     await _pumpComposeWithPicker(
       tester,
       () async => const ContactPick(
@@ -146,10 +183,8 @@ void main() {
     await tester.tap(find.text('home@qq.com'));
     await tester.pumpAndSettle();
 
-    final to = tester.widget<TextField>(
-      find.byKey(const Key('compose-to-field')),
-    );
-    expect(to.controller?.text, 'home@qq.com');
+    expect(find.text('home@qq.com'), findsOneWidget);
+    expect(find.text('work@qq.com'), findsNothing);
   });
 
   testWidgets('联系人没邮箱 / 没通讯录权限 → 就地提示，收件人不变', (WidgetTester tester) async {
@@ -175,6 +210,172 @@ void main() {
     await tester.tap(find.byIcon(AppIcons.add));
     await tester.pumpAndSettle();
     expect(find.textContaining('没有通讯录权限'), findsOneWidget);
+  });
+
+  testWidgets('输入提示：按名称 / 地址模糊匹配，点提示项即落成胶囊', (WidgetTester tester) async {
+    await _pumpComposeOnly(
+      tester,
+      suggestions: const [
+        ComposeContact(address: 'noreply@baipiao.org', name: '白嫖社区'),
+        ComposeContact(address: 'noreply@github.com', name: 'GitHub'),
+      ],
+    );
+
+    // 匹配地址片段 —— 提示卡里名称在上、邮箱在下。
+    await tester.enterText(
+      find.byKey(const Key('compose-to-field')),
+      'baipiao',
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('白嫖社区'), findsOneWidget);
+    expect(find.text('noreply@baipiao.org'), findsOneWidget);
+    // 没匹配上的候选不出现。
+    expect(find.text('GitHub'), findsNothing);
+
+    await tester.tap(find.text('白嫖社区'));
+    await tester.pumpAndSettle();
+
+    // 提示卡收起、输入框清空，人变成胶囊（胶囊显示名称）。
+    expect(find.text('noreply@baipiao.org'), findsNothing);
+    expect(find.text('白嫖社区'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('compose-to-field')))
+          .controller
+          ?.text,
+      isEmpty,
+    );
+  });
+
+  testWidgets('输入提示：已经填过的人不再提示', (WidgetTester tester) async {
+    await _pumpComposeOnly(
+      tester,
+      suggestions: const [ComposeContact(address: 'bob@qq.com', name: 'Bob')],
+    );
+
+    await _typeRecipient(tester, 'to', 'bob@qq.com');
+    await tester.enterText(find.byKey(const Key('compose-to-field')), 'bob');
+    await tester.pumpAndSettle();
+
+    // 胶囊显示的是名称还是地址取决于候选有没有名字；这里是手敲的地址，
+    // 故只应看到胶囊上的地址，不该再冒出一张写着 Bob 的提示卡。
+    expect(find.text('Bob'), findsNothing);
+  });
+
+  testWidgets('点收件人胶囊 → 菜单「移至抄送」把人挪到抄送栏', (WidgetTester tester) async {
+    await _pumpComposeOnly(tester);
+
+    await _typeRecipient(tester, 'to', 'bob@qq.com');
+    await tester.tap(find.text('bob@qq.com'));
+    await tester.pumpAndSettle();
+
+    // 四项菜单（在收件人栏里，故「移至」只给抄送 / 密送）。
+    expect(find.text('删除'), findsOneWidget);
+    expect(find.text('编辑'), findsOneWidget);
+    expect(find.text('移至抄送'), findsOneWidget);
+    expect(find.text('移至密送'), findsOneWidget);
+    expect(find.text('移至收件人'), findsNothing);
+
+    await tester.tap(find.text('移至抄送'));
+    await tester.pumpAndSettle();
+
+    // 人在抄送栏里；收件人栏空了 → 发送按钮重新置灰。
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('compose-row-cc')),
+        matching: find.text('bob@qq.com'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('compose-row-to')),
+        matching: find.text('bob@qq.com'),
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('点收件人胶囊 → 菜单「编辑」把地址放回输入框', (WidgetTester tester) async {
+    await _pumpComposeOnly(tester);
+
+    await _typeRecipient(tester, 'to', 'bob@qq.com');
+    await tester.tap(find.text('bob@qq.com'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('编辑'));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('compose-to-field')))
+          .controller
+          ?.text,
+      'bob@qq.com',
+    );
+  });
+
+  testWidgets('抄送 / 密送：点收件人输入框才展开，都为空且失焦后收回折叠行', (WidgetTester tester) async {
+    await _pumpComposeOnly(tester);
+
+    // 初始折叠成一行「抄送/密送, 发件人：」。
+    expect(find.text('抄送/密送, 发件人：'), findsOneWidget);
+    expect(find.text('抄　送：'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('compose-to-field')));
+    await tester.pumpAndSettle();
+    expect(find.text('抄　送：'), findsOneWidget);
+    expect(find.text('密　送：'), findsOneWidget);
+    expect(find.text('发件人：'), findsOneWidget);
+    expect(find.text('抄送/密送, 发件人：'), findsNothing);
+
+    // 焦点挪去正文、抄送密送都还空着 → 收回折叠行。
+    await tester.tap(find.byKey(const Key('compose-body-field')));
+    await tester.pumpAndSettle();
+    expect(find.text('抄送/密送, 发件人：'), findsOneWidget);
+    expect(find.text('抄　送：'), findsNothing);
+  });
+
+  testWidgets('填了抄送 → 即使失焦也不折叠（否则等于把人藏起来）', (WidgetTester tester) async {
+    await _pumpComposeOnly(tester);
+
+    await tester.tap(find.byKey(const Key('compose-to-field')));
+    await tester.pumpAndSettle();
+    await _typeRecipient(tester, 'cc', 'cc@qq.com');
+    await tester.tap(find.byKey(const Key('compose-body-field')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('抄　送：'), findsOneWidget);
+    expect(find.text('cc@qq.com'), findsOneWidget);
+  });
+
+  testWidgets('页面可上滑：正文短时不滚，变长后整页能滚', (WidgetTester tester) async {
+    await _pumpComposeOnly(tester);
+
+    // 正文 TextField 自己也带一个 Scrollable，取最外层那个（树序在前）。
+    final scrollable = find
+        .descendant(
+          of: find.byType(CustomScrollView),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    // 正文用 `SliverFillRemaining(hasScrollBody: false)` 兜底：内容装得下时正好占满
+    // 剩余高度，一格也滚不动。
+    expect(
+      tester.state<ScrollableState>(scrollable).position.maxScrollExtent,
+      0,
+    );
+
+    await tester.enterText(
+      find.byKey(const Key('compose-body-field')),
+      List<String>.filled(60, '正文很长').join('\n'),
+    );
+    await tester.pumpAndSettle();
+
+    // 表单 / 附件 / 正文同在一条滚动条里 —— 正文撑长后上滑就能把收件人那几行滚走。
+    expect(
+      tester.state<ScrollableState>(scrollable).position.maxScrollExtent,
+      greaterThan(0),
+    );
   });
 
   testWidgets('底栏四格等宽：撤销 / 重做 / Aa / 图片 中心等距', (WidgetTester tester) async {
@@ -321,5 +522,24 @@ void main() {
     expect(sent.body, contains('正文'));
     // 没选附件 → 不下发 attachments。
     expect(sent.attachments, isEmpty);
+  });
+
+  testWidgets('抄送 / 密送随发信一起下发给 Graph', (WidgetTester tester) async {
+    final api = FakeMailApi();
+    await _pumpCompose(tester, api);
+
+    await _typeRecipient(tester, 'to', 'to@qq.com');
+    await _typeRecipient(tester, 'cc', 'cc@qq.com');
+    await _typeRecipient(tester, 'bcc', 'bcc@qq.com');
+    await tester.enterText(find.byKey(const Key('compose-body-field')), '正文');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(AppIcons.send));
+    await tester.pumpAndSettle();
+
+    final sent = api.sentMails.single;
+    expect(sent.to, ['to@qq.com']);
+    expect(sent.cc, ['cc@qq.com']);
+    expect(sent.bcc, ['bcc@qq.com']);
   });
 }

@@ -140,6 +140,12 @@ abstract class AppLocalizations {
   /// **'搜索邮件'**
   String get mailSearchHint;
 
+  /// No description provided for @searchClear.
+  ///
+  /// In zh, this message translates to:
+  /// **'清除'**
+  String get searchClear;
+
   /// No description provided for @refreshLastUpdated.
   ///
   /// In zh, this message translates to:
@@ -254,11 +260,65 @@ abstract class AppLocalizations {
   /// **'收件人：'**
   String get composeTo;
 
+  /// No description provided for @composeCc.
+  ///
+  /// In zh, this message translates to:
+  /// **'抄　送：'**
+  String get composeCc;
+
+  /// No description provided for @composeBcc.
+  ///
+  /// In zh, this message translates to:
+  /// **'密　送：'**
+  String get composeBcc;
+
+  /// No description provided for @composeFrom.
+  ///
+  /// In zh, this message translates to:
+  /// **'发件人：'**
+  String get composeFrom;
+
   /// No description provided for @composeCcFrom.
   ///
   /// In zh, this message translates to:
   /// **'抄送/密送, 发件人：'**
   String get composeCcFrom;
+
+  /// No description provided for @composeRecipientDelete.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除'**
+  String get composeRecipientDelete;
+
+  /// No description provided for @composeRecipientEdit.
+  ///
+  /// In zh, this message translates to:
+  /// **'编辑'**
+  String get composeRecipientEdit;
+
+  /// No description provided for @composeRecipientMoveToTo.
+  ///
+  /// In zh, this message translates to:
+  /// **'移至收件人'**
+  String get composeRecipientMoveToTo;
+
+  /// No description provided for @composeRecipientMoveToCc.
+  ///
+  /// In zh, this message translates to:
+  /// **'移至抄送'**
+  String get composeRecipientMoveToCc;
+
+  /// No description provided for @composeRecipientMoveToBcc.
+  ///
+  /// In zh, this message translates to:
+  /// **'移至密送'**
+  String get composeRecipientMoveToBcc;
+
+  /// No description provided for @composeRecipientOptions.
+  ///
+  /// In zh, this message translates to:
+  /// **'收件人操作'**
+  String get composeRecipientOptions;
 
   /// No description provided for @composeImportance.
   ///

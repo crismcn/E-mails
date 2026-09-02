@@ -31,6 +31,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mailSearchHint => '搜索邮件';
 
   @override
+  String get searchClear => '清除';
+
+  @override
   String refreshLastUpdated(String time) {
     return '上次更新时间：$time';
   }
@@ -94,7 +97,34 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composeTo => '收件人：';
 
   @override
+  String get composeCc => '抄　送：';
+
+  @override
+  String get composeBcc => '密　送：';
+
+  @override
+  String get composeFrom => '发件人：';
+
+  @override
   String get composeCcFrom => '抄送/密送, 发件人：';
+
+  @override
+  String get composeRecipientDelete => '删除';
+
+  @override
+  String get composeRecipientEdit => '编辑';
+
+  @override
+  String get composeRecipientMoveToTo => '移至收件人';
+
+  @override
+  String get composeRecipientMoveToCc => '移至抄送';
+
+  @override
+  String get composeRecipientMoveToBcc => '移至密送';
+
+  @override
+  String get composeRecipientOptions => '收件人操作';
 
   @override
   String get composeImportance => '重要性：';

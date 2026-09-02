@@ -1,7 +1,6 @@
 import 'dart:async' show Timer;
-import 'dart:math' show min;
+import 'dart:math' show max, min;
 
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart' show Factory;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -35,14 +34,20 @@ import '../theme/app_palette.dart';
 /// 链接照样点得动。见 [_MultiTouchGestureRecognizer]。
 ///
 /// **加载期间盖一层 App 底色的遮罩**：WebView 在 CSS 生效前会画自己的默认白底，暗色
-/// 主题下就是一下白闪；加上首帧占位高度与实测高度不同，还会跳一次版式。遮罩从第一帧
-/// 就盖住，等「文档加载完 + 量到高度」再淡出。
+/// 主题下就是一下白闪。遮罩从第一帧就盖住，等「文档加载完 + 量到高度」再淡出。
+/// 遮罩期间盒子**至少占满 [viewportHeight]**，也顺手免掉「先给一段短占位、量到高度
+/// 再跳一次」。
+///
+/// **转圈不由本组件画**：遮罩只是一层底色，转圈由详情页浮在内容区正中 —— 从「懒取
+/// 全文」到「正文可见」全程是同一个转圈，见 [onCoverChanged]。
 class MailHtmlView extends StatefulWidget {
   const MailHtmlView({
     super.key,
     required this.html,
     required this.viewportWidth,
+    required this.viewportHeight,
     required this.onTapUrl,
+    this.onCoverChanged,
   });
 
   /// 邮件正文 HTML（发件人给的原文，包装与消毒在 [buildMailHtmlDocument] 里做）。
@@ -51,20 +56,29 @@ class MailHtmlView extends StatefulWidget {
   /// 可用宽度（逻辑像素）—— 判断这封邮件是否需要整体缩放适配屏宽。
   final double viewportWidth;
 
+  /// 内容区的可见高度（逻辑像素）—— **只**用于加载遮罩期的占位高度。不参与排版
+  /// 缩放，变了也不重载文档（键盘弹起 / 旋屏不该让正文重来一遍）。
+  final double viewportHeight;
+
   /// 点链接 —— 交给外部浏览器打开，WebView 自己不导航。
   final Future<bool> Function(String url) onTapUrl;
+
+  /// 遮罩起落（`true` = 刚盖上，`false` = 开始淡出）—— 宿主据此决定要不要显示转圈。
+  ///
+  /// 转圈刻意交给宿主画：详情页从「懒取全文」到「正文可见」是**一个**等待过程，
+  /// 两段各画一个的话交接处会空一两帧（Android 上平台视图首帧还要几十毫秒），
+  /// 看着就是**闪一下**。淡出时长与 [kRevealDuration] 一致，宿主的转圈跟着一起淡。
+  final ValueChanged<bool>? onCoverChanged;
+
+  /// 遮罩淡出时长 —— 宿主的转圈用同一个值，两者同步淡出。
+  static const Duration kRevealDuration = Duration(milliseconds: 240);
 
   @override
   State<MailHtmlView> createState() => _MailHtmlViewState();
 }
+
 class _MailHtmlViewState extends State<MailHtmlView>
     with SingleTickerProviderStateMixin {
-  /// 首帧的占位高度 —— 平台视图给 0 高度可能不初始化，先给一段再按实测替换。
-  static const double _kInitialHeight = 160;
-
-  /// 遮罩淡出时长。
-  static const Duration _kRevealDuration = Duration(milliseconds: 240);
-
   /// 条件满足后再多盖这么久 —— `onPageFinished` 只说明文档加载完，WebView 把带样式
   /// （暗色下还带反色滤镜）的首帧真正合成到纹理上还要一两帧。早淡出就是一下闪动。
   static const Duration _kRevealSettle = Duration(milliseconds: 140);
@@ -86,7 +100,7 @@ class _MailHtmlViewState extends State<MailHtmlView>
   late final AnimationController _cover = AnimationController(
     vsync: this,
     value: 1,
-    duration: _kRevealDuration,
+    duration: MailHtmlView.kRevealDuration,
   );
 
   /// 兜底淡出的定时器（见 [_kRevealDeadline]）。
@@ -95,6 +109,12 @@ class _MailHtmlViewState extends State<MailHtmlView>
   bool _revealed = false;
   bool _revealScheduled = false;
   bool _pageFinished = false;
+
+  /// 遮罩是否已经**彻底淡完** —— 到这时才把盒子交回实测高度。
+  ///
+  /// 刻意不用「开始淡出」：短邮件的实测高度可能比一屏还矮，在淡出**期间**收盒子会让
+  /// WebView 的视口跟着变小、文档重排 —— 那一下正好透过半透明的遮罩被看见。
+  bool _coverGone = false;
 
   /// 手势识别器只建一份 —— 每帧换新的 `Set` 会让平台视图反复重挂。
   late final Set<Factory<OneSequenceGestureRecognizer>> _gestures =
@@ -121,13 +141,13 @@ class _MailHtmlViewState extends State<MailHtmlView>
   bool _dark = false;
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final palette = context.palette;
-    if (_controller != null && dark == _dark) return;
-    _dark = dark;
-    _load(palette);
+  void initState() {
+    super.initState();
+    // 淡完了才把盒子交回实测高度（见 [_coverGone]）。
+    _cover.addStatusListener((status) {
+      if (status != AnimationStatus.dismissed || _coverGone) return;
+      setState(() => _coverGone = true);
+    });
   }
 
   @override
@@ -135,6 +155,16 @@ class _MailHtmlViewState extends State<MailHtmlView>
     _revealTimer?.cancel();
     _cover.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final palette = context.palette;
+    if (_controller != null && dark == _dark) return;
+    _dark = dark;
+    _load(palette);
   }
 
   @override
@@ -154,6 +184,8 @@ class _MailHtmlViewState extends State<MailHtmlView>
     // 测试环境没有注册平台视图 —— 不建 WebView，走下面的降级分支。
     if (WebViewPlatform.instance == null) {
       _document = _build(palette);
+      // 没有 WebView 就没有遮罩，宿主的转圈不能一直挂着。
+      _notifyCover(false);
       return;
     }
     final document = _build(palette);
@@ -194,9 +226,23 @@ class _MailHtmlViewState extends State<MailHtmlView>
     _pageFinished = false;
     _revealed = false;
     _revealScheduled = false;
+    _coverGone = false;
     _cover.value = 1;
     _revealTimer?.cancel();
     _revealTimer = Timer(_kRevealDeadline, _reveal);
+    _notifyCover(true);
+  }
+
+  /// 把遮罩的起落告诉宿主（详情页据此显示 / 淡出那个转圈）。
+  ///
+  /// **排到帧末**：两个调用点之一是 `didChangeDependencies`（换主题重载），此刻宿主
+  /// 正在构建，直接回调会撞上「setState() called during build」。
+  void _notifyCover(bool covered) {
+    final notify = widget.onCoverChanged;
+    if (notify == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) notify(covered);
+    });
   }
 
   /// 文档加载完 —— 宿主侧补量一次高度，并看看够不够条件让遮罩淡出。
@@ -207,7 +253,7 @@ class _MailHtmlViewState extends State<MailHtmlView>
   }
 
   /// 「文档加载完 + 已经量到高度」才排淡出：此时看到的就是最终版式，不会先给一眼
-  /// [_kInitialHeight] 的占位再跳一次。再压 [_kRevealSettle] 等首帧上纹理。
+  /// 占位高度再跳一次。再压 [_kRevealSettle] 等首帧上纹理。
   ///
   /// 只排一次 —— 图片是陆续到的，每次高度增长都重排会把淡出一直推到兜底时间。
   void _maybeReveal() {
@@ -218,11 +264,16 @@ class _MailHtmlViewState extends State<MailHtmlView>
   }
 
   /// 遮罩淡出，只做一次。
+  ///
+  /// 盒子交回实测高度是在**淡完之后**（[_coverGone] 的状态监听里），不在这里 ——
+  /// 淡出期间收盒子会让 WebView 视口变小、文档重排，正好被看见。
   void _reveal() {
     if (!mounted || _revealed) return;
-    _revealed = true;
     _revealTimer?.cancel();
+    _revealed = true;
     _cover.reverse();
+    // 宿主那个转圈跟着一起淡出（同一时长）。
+    _notifyCover(false);
   }
 
   /// Android WebView 默认 `useWideViewPort = false`，会**忽略** `viewport` meta ——
@@ -306,19 +357,26 @@ class _MailHtmlViewState extends State<MailHtmlView>
       return MailHtmlUnavailable(document: document);
     }
     final palette = context.palette;
+    // 遮罩还盖着时盒子至少占满内容区：量到高度前不必先给一段短占位，省掉一次版式
+    // 跳动。**淡完**（不是开始淡）才回到实测高度，见 [_coverGone]（量不到高度时
+    // 退回一屏高，比一段短占位更不容易截断）。
+    final measured = _height;
+    final height = _coverGone
+        ? (measured ?? widget.viewportHeight)
+        : max(measured ?? 0, widget.viewportHeight);
     return SizedBox(
-      height: _height ?? _kInitialHeight,
+      height: height,
       child: Stack(
         children: [
           // 用默认的纹理合成（不开 Hybrid Composition）—— HC 能绕开纹理尺寸限制，
           // 但实测滚动明显卡顿；改成默认合成 + 高度上限。
           WebViewWidget(controller: controller, gestureRecognizers: _gestures),
-          // 加载遮罩。**淡出的是这层 Flutter 覆盖层，不是 WebView 自己的
-          // `opacity`** —— 平台视图的透明度在 iOS 上不保证生效（embedder 只稳定支持
-          // 裁剪与变换），盖一层两端都靠得住。
+          // 加载遮罩 —— 只是一层 App 底色。**淡出的是这层 Flutter 覆盖层，不是
+          // WebView 自己的 `opacity`**：平台视图的透明度在 iOS 上不保证生效
+          // （embedder 只稳定支持裁剪与变换），盖一层两端都靠得住。
           //
-          // 淡完把整层**移出树**：`CupertinoActivityIndicator` 留在 `opacity:0` 下面
-          // 会一直空转，每帧都要重绘（测试里还会让 `pumpAndSettle` 永不收敛）。
+          // 转圈不在这里画 —— 详情页从懒取到正文可见全程用同一个，见
+          // [MailHtmlView.onCoverChanged]。
           Positioned.fill(
             child: IgnorePointer(
               child: AnimatedBuilder(
@@ -327,15 +385,7 @@ class _MailHtmlViewState extends State<MailHtmlView>
                     ? const SizedBox.shrink()
                     : FadeTransition(
                         opacity: _cover,
-                        child: ColoredBox(
-                          color: palette.background,
-                          child: Center(
-                            child: CupertinoActivityIndicator(
-                              radius: 12,
-                              color: palette.textSecondary,
-                            ),
-                          ),
-                        ),
+                        child: ColoredBox(color: palette.background),
                       ),
               ),
             ),
