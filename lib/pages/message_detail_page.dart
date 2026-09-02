@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -42,7 +43,7 @@ class MessageDetailPage extends StatefulWidget {
 }
 
 class _MessageDetailPageState extends State<MessageDetailPage>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late bool _starred = widget.message.isFlagged;
 
   /// 标星写回进行中 —— 去重，避免连点发出多次 PATCH。
@@ -81,16 +82,64 @@ class _MessageDetailPageState extends State<MessageDetailPage>
 
   // ---- 页面结构 ----
   //
-  // `Column`：**固定**的返回栏 / 元信息与正文同在一条滚动条里 / **固定**的底部操作栏。
+  // `Stack`：滚动视图 `Positioned.fill` **恒定**铺满整块内容区（收件人 / 主题 / 日期 /
+  // 附件 / 正文都在里面，整页一条滚动条），返回栏与底部操作栏是浮在它上面的两条
+  // **绝对定位**浮层，靠滚动视图**恒定**的上下内边距让位。
   //
-  // 返回栏与底部操作栏**不再随滑动收起**（用户要求）。收起过 —— 无论压高度还是浮层
-  // 平移 —— 都会改变正文区尺寸或滚动几何，而正文是个 WebView：一改尺寸就重排、
-  // 重排又吐新的滚动偏移去驱动收放，形成正反馈，表现为「全屏状态来回跳动」。
-  // 不收起就没有这条回路。
+  // 上滑把两条浮层收起、下滑切回，**只用 `SlideTransition` 做绘制期平移** ——
+  // 绝不改滚动视图的尺寸，也绝不改那份内边距。历史上「全屏状态来回跳动」的病根是
+  // 收放改了正文区的尺寸或滚动几何：正文是 WebView，一改尺寸就重排、重排又吐出新的
+  // 滚动偏移去驱动收放，正反馈。现在 `maxScrollExtent` 全程恒定（测试里有断言），
+  // WebView 一次都不会因收放而重排，那条回路不存在。
+
+  /// 两条浮层的显隐（1 = 完全展开，0 = 完全移出屏幕）。
+  late final AnimationController _chrome = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 200),
+    value: 1,
+  );
+
+  late final Animation<Offset> _headerSlide = _slide(const Offset(0, -1));
+  late final Animation<Offset> _actionBarSlide = _slide(const Offset(0, 1));
+
+  Animation<Offset> _slide(Offset hidden) =>
+      Tween<Offset>(begin: hidden, end: Offset.zero).animate(
+        CurvedAnimation(
+          parent: _chrome,
+          curve: Curves.easeOut,
+          reverseCurve: Curves.easeIn,
+        ),
+      );
+
+  /// 页面那条滚动条 —— 收放由它驱动（不是 WebView 的滚动回报）。
+  final ScrollController _scroll = ScrollController();
+
+  /// 收放的当前目标（1 = 展开）—— 让 [_setChromeVisible] 幂等，滚动回调每帧都来。
+  double _chromeTarget = 1;
+
+  /// 贴顶这么近就恒展开 —— 顶部那一小段永远看得见返回箭头。
+  static const double _kChromeShowOffset = 60;
+
+  /// 上滑越过这里才允许收起。
+  static const double _kChromeHideOffset = 80;
+
+  /// 可滚距离不足这么多就不收 —— 内容本来就快装得下，收了也没多少可看。
+  static const double _kChromeMinExtent = 200;
+
+  /// 两条浮层的高度估值（首帧用，随后被实测值校正，见 [_measureChrome]）。
+  static const double _kHeaderEstimate = 64;
+  static const double _kActionBarEstimate = 70;
+
+  final GlobalKey _headerKey = GlobalKey();
+  final GlobalKey _actionBarKey = GlobalKey();
+
+  double _headerHeight = _kHeaderEstimate;
+  double _actionBarHeight = _kActionBarEstimate;
 
   @override
   void initState() {
     super.initState();
+    _scroll.addListener(_onScroll);
     // 无全文（htmlBody/body 皆空）且有 id → 懒取。会话预览的 body 可能已含摘要，
     // 但为拿到完整 HTML/纯文本仍以 id 取一次权威全文。
     if (widget.message.id.isNotEmpty && widget.message.htmlBody == null) {
@@ -107,8 +156,70 @@ class _MessageDetailPageState extends State<MessageDetailPage>
 
   @override
   void dispose() {
+    _scroll.dispose();
+    _chrome.dispose();
     _spinner.dispose();
     super.dispose();
+  }
+
+  /// 按滚动位置与方向决定两条浮层的收放。
+  ///
+  /// **下滑立刻切回**（不是等快到顶部才回来）：`appRoute` 没有 iOS 侧滑返回，
+  /// 返回箭头藏着就退不出这一页。
+  void _onScroll() {
+    if (!_scroll.hasClients) return;
+    final position = _scroll.position;
+    if (position.pixels <= _kChromeShowOffset ||
+        position.maxScrollExtent < _kChromeMinExtent) {
+      _setChromeVisible(true);
+      return;
+    }
+    switch (position.userScrollDirection) {
+      case ScrollDirection.reverse: // 手指上滑看后文 → 收起，全屏留给正文
+        if (position.pixels > _kChromeHideOffset) _setChromeVisible(false);
+      case ScrollDirection.forward: // 下滑 → 立刻切回
+        _setChromeVisible(true);
+      case ScrollDirection.idle:
+        break;
+    }
+  }
+
+  /// 收 / 放两条浮层。
+  ///
+  /// **只驱动动画、不 `setState`**：重建会把正文那块 WebView 一起重排 —— 那正是
+  /// 历史上「来回跳动」的起点。`SlideTransition` 自己听动画，只重绘那两条浮层。
+  void _setChromeVisible(bool visible) {
+    final target = visible ? 1.0 : 0.0;
+    if (_chromeTarget == target) return;
+    _chromeTarget = target;
+    if (visible) {
+      _chrome.forward();
+    } else {
+      _chrome.reverse();
+    }
+  }
+
+  /// 帧后量一次两条浮层的实高，校正滚动视图的留白。
+  ///
+  /// 写死会因平台字体 / 系统文字缩放差几像素，内容正好露在浮层边缘那一线。
+  /// 只在值真的变了时 `setState` —— 否则量→重建→再量就成环了。
+  void _measureChrome() {
+    final header = _bandHeight(_headerKey);
+    final actionBar = _bandHeight(_actionBarKey);
+    if (header == null || actionBar == null) return;
+    if ((header - _headerHeight).abs() < 0.5 &&
+        (actionBar - _actionBarHeight).abs() < 0.5) {
+      return;
+    }
+    setState(() {
+      _headerHeight = header;
+      _actionBarHeight = actionBar;
+    });
+  }
+
+  static double? _bandHeight(GlobalKey key) {
+    final box = key.currentContext?.findRenderObject();
+    return box is RenderBox && box.hasSize ? box.size.height : null;
   }
 
   @override
@@ -320,72 +431,114 @@ class _MessageDetailPageState extends State<MessageDetailPage>
   Widget build(BuildContext context) {
     final palette = context.palette;
     final message = _message;
+    // 浮层实高帧后校正一次（只在真的变了时 setState，见 [_measureChrome]）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _measureChrome();
+    });
     return Scaffold(
       backgroundColor: palette.background,
       body: SafeArea(
-        child: Column(
-          children: [
-            _Header(
-              title: message.sender,
-              starred: _starred,
-              onStar: _toggleStar,
-            ),
-            // 整页一条滚动条：收件人 / 主题 / 日期 / 附件 / 正文一起上滑。
-            //
-            // 外面套 `LayoutBuilder` 只为拿内容区的可见高度：正文 WebView 的加载
-            // 遮罩期要按它占位（量到真实高度前先占满一屏，见 [MailHtmlView]）。
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, box) => Stack(
-                  // `expand`：滚动视图仍像原来那样铺满内容区（默认 loose 会让它
-                  // 按内容缩，短邮件时下半截就点不着、滑不动）。
-                  fit: StackFit.expand,
-                  children: [
-                    SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _MetaSection(
-                            message: message,
-                            attachments: _attachments,
-                            expanded: _attachExpanded,
-                            bytes: _attachBytes,
-                            busy: _attachBusy,
-                            onToggle: _toggleAttachments,
-                            onOpen: _openAttachment,
-                            onDownload: _downloadAttachment,
-                          ),
-                          _body(palette, message, box.maxHeight),
-                        ],
+        // `LayoutBuilder` 只为拿内容区总高：正文 WebView 的加载遮罩期要按「可见高度」
+        // 占位（量到真实高度前先占满一屏，见 [MailHtmlView]）。
+        child: LayoutBuilder(
+          builder: (context, box) => Stack(
+            // `expand`：滚动视图铺满内容区（默认 loose 会让它按内容缩，短邮件时
+            // 下半截就点不着、滑不动）。
+            fit: StackFit.expand,
+            children: [
+              // 整页一条滚动条：收件人 / 主题 / 日期 / 附件 / 正文一起上滑。
+              //
+              // 铺满整块内容区、靠**恒定**的上下留白给两条浮层让位 —— 收放不动这份
+              // 留白，`maxScrollExtent` 恒定，正文一格都不跳。内容会滑到浮层**背后**
+              // （浮层不透明），收起时那部分就露出来。
+              Positioned.fill(
+                child: SingleChildScrollView(
+                  controller: _scroll,
+                  padding: EdgeInsets.only(
+                    top: _headerHeight,
+                    bottom: _actionBarHeight,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _MetaSection(
+                        message: message,
+                        attachments: _attachments,
+                        expanded: _attachExpanded,
+                        bytes: _attachBytes,
+                        busy: _attachBusy,
+                        onToggle: _toggleAttachments,
+                        onOpen: _openAttachment,
+                        onDownload: _downloadAttachment,
                       ),
-                    ),
-                    // 「正文还看不到」时的转圈 —— 浮在**内容区正中**，懒取全文与正文
-                    // 渲染两段共用它、中间不落幕（见 [_spinner]）。排在元信息下面时
-                    // 它会贴着收件人那几行，看着像挂在页面上三分之一处。
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        child: AnimatedBuilder(
-                          animation: _spinner,
-                          builder: (context, _) => _spinner.isDismissed
-                              ? const SizedBox.shrink()
-                              : FadeTransition(
-                                  opacity: _spinner,
-                                  child: Center(
-                                    child: CupertinoActivityIndicator(
-                                      radius: 12,
-                                      color: palette.textSecondary,
-                                    ),
-                                  ),
-                                ),
-                        ),
+                      _body(
+                        palette,
+                        message,
+                        box.maxHeight - _headerHeight - _actionBarHeight,
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const _ActionBar(),
-          ],
+              // 「正文还看不到」时的转圈 —— 浮在内容区正中，懒取全文与正文渲染两段
+              // 共用它、中间不落幕（见 [_spinner]）。排在元信息下面时它会贴着收件人
+              // 那几行，看着像挂在页面上三分之一处。两条浮层高度相当，故按整块内容区
+              // 居中即可（CLAUDE.md §4.7）。
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: AnimatedBuilder(
+                    animation: _spinner,
+                    builder: (context, _) => _spinner.isDismissed
+                        ? const SizedBox.shrink()
+                        : FadeTransition(
+                            opacity: _spinner,
+                            child: Center(
+                              child: CupertinoActivityIndicator(
+                                radius: 12,
+                                color: palette.textSecondary,
+                              ),
+                            ),
+                          ),
+                  ),
+                ),
+              ),
+              // 两条浮层。**`ClipRect` 是必需的**：`SlideTransition` 是绘制期变换，
+              // 浮层的布局矩形始终在 `Stack` 范围内 → `RenderStack` 认为没有溢出 →
+              // 不装裁剪层 → 挪出去的部分照画。真机上表现为「顶栏没隐藏」：它滑进
+              // 状态栏那条安全区里赖着不走（测试的 view padding 为 0 时越界即出屏被
+              // 裁，所以第一版测试没抓到 —— 现在断言按各自的裁剪窗来判）。
+              // 裁剪同时管住命中测试：藏起来的浮层点不到。
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: ClipRect(
+                  key: const Key('detail-header-clip'),
+                  child: SlideTransition(
+                    position: _headerSlide,
+                    child: _Header(
+                      key: _headerKey,
+                      title: message.sender,
+                      starred: _starred,
+                      onStar: _toggleStar,
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: ClipRect(
+                  key: const Key('detail-actionbar-clip'),
+                  child: SlideTransition(
+                    position: _actionBarSlide,
+                    child: _ActionBar(key: _actionBarKey),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -498,8 +651,11 @@ class _MetaSection extends StatelessWidget {
 }
 
 /// 顶部：返回箭头 + 发件人名（加粗大字）+ 右侧收藏星标。
+///
+/// 现在是浮在正文上的一条浮层，故必须自带不透明底色。
 class _Header extends StatelessWidget {
   const _Header({
+    super.key,
     required this.title,
     required this.starred,
     required this.onStar,
@@ -922,17 +1078,14 @@ class _BodyLoading extends StatelessWidget {
 
 /// 底部操作栏 —— 回复 / 全部回复 / 转发 / 删除 / 更多。
 class _ActionBar extends StatelessWidget {
-  const _ActionBar();
+  const _ActionBar({super.key});
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final l10n = AppLocalizations.of(context);
     return Container(
-      decoration: BoxDecoration(
-        color: palette.background,
-        border: Border(top: BorderSide(color: palette.divider, width: 1)),
-      ),
+      decoration: BoxDecoration(color: palette.background),
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,

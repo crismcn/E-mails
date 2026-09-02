@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderClipRect;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -226,22 +227,34 @@ void main() {
     );
   });
 
-  testWidgets('整页一条滚动条：上滑时收件人 / 主题跟着滚走，返回栏与底部操作栏不收起', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('上滑收起顶 / 底两条浮层，下滑立刻切回；收放不改滚动几何', (WidgetTester tester) async {
+    // 刘海机型：顶部浮层收起时要滑进状态栏那条安全区里 —— 历史上它在那儿赖着不走
+    // （`SlideTransition` 是绘制期变换，`Stack` 认为没溢出、不装裁剪层），而测试的
+    // view padding 为 0 时越界即出屏被裁，第一版断言就没抓到。故按各自的裁剪窗判。
+    tester.view.padding = const FakeViewPadding(top: 132);
+    tester.view.viewPadding = const FakeViewPadding(top: 132);
+    addTearDown(tester.view.resetPadding);
+    addTearDown(tester.view.resetViewPadding);
+
     await _pumpList(tester);
     // 纯文本长邮件：HTML 正文在测试里没有平台视图、撑不出滚动，故用纯文本验证。
     await tester.tap(find.text('Claude'));
     await tester.pumpAndSettle();
 
+    final scrollView = find.byType(SingleChildScrollView).last;
+    final position = tester
+        .widget<SingleChildScrollView>(scrollView)
+        .controller!
+        .position;
+    final extentBefore = position.maxScrollExtent;
     final recipientBefore = tester.getTopLeft(find.text('收件人：')).dy;
-    final headerBefore = tester.getTopLeft(find.byIcon(AppIcons.back)).dy;
-    final actionBefore = tester.getTopLeft(find.text('回复')).dy;
+    final backBefore = tester.getRect(find.byIcon(AppIcons.back));
+    final replyBefore = tester.getTopLeft(find.text('回复')).dy;
 
     // 上滑。用 `timedDrag` 慢速拖拽而非 `drag` 快速甩：SelectableText 与滚动视图
     // 抢手势时，极高速的测试手势会被当成选择操作吞掉。
     await tester.timedDrag(
-      find.byType(SingleChildScrollView).last,
+      scrollView,
       const Offset(0, -320),
       const Duration(milliseconds: 300),
     );
@@ -249,11 +262,75 @@ void main() {
 
     // 元信息与正文同在一条滚动条里 → 一起往上走。
     expect(tester.getTopLeft(find.text('收件人：')).dy, lessThan(recipientBefore));
-    // 返回栏与底部操作栏是固定的：不收起、不平移 —— 收起会改正文区尺寸，
-    // WebView 一重排就吐新偏移驱动收放，正反馈表现为「全屏来回跳动」。
-    expect(tester.getTopLeft(find.byIcon(AppIcons.back)).dy, headerBefore);
-    expect(tester.getTopLeft(find.text('回复')).dy, actionBefore);
-    expect(find.byType(SizeTransition), findsNothing);
+
+    // 两条浮层整体移出各自的裁剪窗 —— 看不见，也点不到（裁剪同时管住命中测试）。
+    final headerClip = tester.getRect(
+      find.byKey(const Key('detail-header-clip')),
+    );
+    expect(
+      tester.getRect(find.byIcon(AppIcons.back)).bottom,
+      lessThanOrEqualTo(headerClip.top + 0.5),
+    );
+    final actionClip = tester.getRect(
+      find.byKey(const Key('detail-actionbar-clip')),
+    );
+    expect(
+      tester.getTopLeft(find.text('回复')).dy,
+      greaterThanOrEqualTo(actionClip.bottom - 0.5),
+    );
+    // 裁剪层必须真在树上，否则挪出去的部分照画。
+    expect(
+      tester.renderObject(find.byKey(const Key('detail-header-clip'))),
+      isA<RenderClipRect>(),
+    );
+
+    // **收放只做绘制期平移**：滚动几何一格不动 —— 正文那块 WebView 不会因收放被
+    // 重排，也就没有「重排吐新偏移 → 又驱动收放」的正反馈（那正是历史上「全屏状态
+    // 来回跳动」的病根）。
+    expect(position.maxScrollExtent, extentBefore);
+
+    // 下滑一点点就立刻切回原位：`appRoute` 没有 iOS 侧滑返回，返回箭头不能一直藏着。
+    await tester.timedDrag(
+      scrollView,
+      const Offset(0, 60),
+      const Duration(milliseconds: 300),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.getRect(find.byIcon(AppIcons.back)), backBefore);
+    expect(tester.getTopLeft(find.text('回复')).dy, replyBefore);
+  });
+
+  testWidgets('内容装得下一屏：上滑也不收起两条浮层', (WidgetTester tester) async {
+    final api = FakeMailApi(
+      fullMessages: {
+        ...kFakeFullMessages,
+        // 短正文、无附件 —— 一屏装得下，可滚距离不足 200，收了也没多少可看。
+        'm1': fakeGraphMessage(
+          id: 'm1',
+          conversationId: 'c1',
+          fromName: 'Claude',
+          subject: 'Claude 任务执行通知 · ✅ 任务已完成',
+          toRecipients: const ['crism@qq.com'],
+          bodyContent: '一行就够的短正文。',
+        ),
+      },
+    );
+    await _pumpList(tester, api);
+    await tester.tap(find.text('Claude'));
+    await tester.pumpAndSettle();
+
+    final backBefore = tester.getRect(find.byIcon(AppIcons.back));
+    final replyBefore = tester.getTopLeft(find.text('回复')).dy;
+
+    await tester.timedDrag(
+      find.byType(SingleChildScrollView).last,
+      const Offset(0, -320),
+      const Duration(milliseconds: 300),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.getRect(find.byIcon(AppIcons.back)), backBefore);
+    expect(tester.getTopLeft(find.text('回复')).dy, replyBefore);
   });
 
   testWidgets('正文懒取中：转圈落在内容区垂直正中', (WidgetTester tester) async {
