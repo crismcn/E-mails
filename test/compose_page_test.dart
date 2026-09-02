@@ -58,8 +58,9 @@ Future<void> _pumpComposeWithPicker(
   WidgetTester tester,
   ContactEmailPicker picker, {
   List<ComposeContact> suggestions = const <ComposeContact>[],
+  double screenWidth = 1080,
 }) async {
-  tester.view.physicalSize = const Size(1080, 2340);
+  tester.view.physicalSize = Size(screenWidth, 2340);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
@@ -84,11 +85,13 @@ Future<void> _pumpComposeWithPicker(
 Future<void> _pumpComposeOnly(
   WidgetTester tester, {
   List<ComposeContact> suggestions = const <ComposeContact>[],
+  double screenWidth = 1080,
 }) {
   return _pumpComposeWithPicker(
     tester,
     () async => const ContactPick(ContactPickStatus.cancelled),
     suggestions: suggestions,
+    screenWidth: screenWidth,
   );
 }
 
@@ -164,6 +167,41 @@ void main() {
     expect(find.text('c@d.com'), findsOneWidget);
     // 旧实现是「a@b.com; c@d.com」一整串，现在各自成胶囊。
     expect(find.text('a@b.com; c@d.com'), findsNothing);
+  });
+
+  testWidgets('收件人光标紧跟胶囊：行尾余量够就同一行，不够才另起一行', (WidgetTester tester) async {
+    // 测试字体每个字都是 fontSize 见方（比真机字体宽近一倍），故把屏幕放宽到 480 逻辑
+    // 像素，让「一枚胶囊 + 输入框」的行尾余量与真机上的观感一致。
+    await _pumpComposeOnly(tester, screenWidth: 1440);
+    await _typeRecipient(tester, 'to', 'a@b.com');
+
+    Rect chipOf(String label) => tester.getRect(
+      find
+          .ancestor(of: find.text(label), matching: find.byType(Container))
+          .first,
+    );
+    final input = find.byKey(const Key('compose-to-field'));
+    final chip = chipOf('a@b.com');
+    var box = tester.getRect(input);
+
+    // 光标（输入框）紧跟在胶囊后面、同一行：原来输入框在 `Wrap` 里会铺满整行宽，
+    // 只要前面有一枚胶囊就挤不下 —— 收件人在这一行、光标被推到下一行。
+    expect(box.left, closeTo(chip.right + 8, 0.5));
+    expect(box.center.dy, closeTo(chip.center.dy, 0.5));
+    // 行尾余量都归它 —— 一直铺到右侧「+」，胶囊右边那片空白也能点出光标。
+    expect(
+      box.right,
+      closeTo(
+        tester.getRect(find.byKey(const Key('compose-to-pick'))).left,
+        0.5,
+      ),
+    );
+
+    // 再填一个：两枚胶囊占掉这一行，余量不足最小可用宽度 → 整行让给输入框。
+    await _typeRecipient(tester, 'to', 'c@d.com');
+    box = tester.getRect(input);
+    expect(box.top, greaterThanOrEqualTo(chipOf('c@d.com').bottom));
+    expect(box.left, closeTo(chipOf('a@b.com').left, 0.5));
   });
 
   testWidgets('联系人有多个邮箱 → 弹层二次选择，选中的那个才落成胶囊', (WidgetTester tester) async {
@@ -453,6 +491,95 @@ void main() {
     expect(api.sentMails, hasLength(1));
     expect(api.sentMails.single.isHtml, isTrue);
     expect(api.sentMails.single.body, contains('color:'));
+  });
+
+  testWidgets('选中一段改字号 / 加粗 → 屏幕上只有那一段变', (WidgetTester tester) async {
+    await _pumpComposeOnly(tester);
+    final body = find.byKey(const Key('compose-body-field'));
+    await tester.enterText(body, '选中这段其余不动');
+    await tester.pumpAndSettle();
+
+    // 选中前三个字（widget 测试拖不动系统选择手柄，直接设选区）。
+    final controller = tester.widget<TextField>(body).controller!;
+    controller.selection = const TextSelection(baseOffset: 0, extentOffset: 3);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(AppIcons.bold));
+    await tester.pumpAndSettle();
+    // 字号入口显示的是光标处的字号；点开条子挑 28。
+    await tester.tap(find.text('16'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('28'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('28'));
+    await tester.pumpAndSettle();
+
+    // `EditableText` 每帧就是拿这棵 span 去画的（`TextField.style` 当基础样式）。
+    final spans = controller
+        .buildTextSpan(
+          context: tester.element(body),
+          style: const TextStyle(fontSize: 16),
+          withComposing: false,
+        )
+        .children!
+        .cast<TextSpan>();
+    expect(spans.map((s) => s.text), ['选中这', '段其余不动']);
+    expect(spans.first.style?.fontWeight, FontWeight.w700);
+    expect(spans.first.style?.fontSize, 28);
+    // 没选中的那半截原样 —— 原来是整篇一起变，这正是要治的毛病。
+    expect(spans.last.style?.fontWeight, FontWeight.w400);
+    expect(spans.last.style?.fontSize, 16);
+  });
+
+  testWidgets('选中一段加粗 → 只有那一段带 span 发出去', (WidgetTester tester) async {
+    final api = FakeMailApi();
+    await _pumpCompose(tester, api);
+    await _typeRecipient(tester, 'to', 'bob@qq.com');
+
+    final body = find.byKey(const Key('compose-body-field'));
+    await tester.enterText(body, '加粗这段其余不动');
+    await tester.pumpAndSettle();
+    tester.widget<TextField>(body).controller!.selection = const TextSelection(
+      baseOffset: 0,
+      extentOffset: 3,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(AppIcons.bold));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(AppIcons.send));
+    await tester.pumpAndSettle();
+
+    final sent = api.sentMails.single;
+    expect(sent.isHtml, isTrue);
+    expect(
+      sent.body,
+      contains('<span style="font-weight:700">加粗这</span>段其余不动'),
+    );
+  });
+
+  testWidgets('没选中文字时点加粗 → 只有接下来打的字变粗', (WidgetTester tester) async {
+    final api = FakeMailApi();
+    await _pumpCompose(tester, api);
+    await _typeRecipient(tester, 'to', 'bob@qq.com');
+    await tester.enterText(find.byKey(const Key('compose-body-field')), '原样');
+    await tester.pumpAndSettle();
+
+    // 光标在末尾、没有选区 —— 这一下只该定下「接着打的字用粗体」。
+    await tester.tap(find.byIcon(AppIcons.bold));
+    await tester.pumpAndSettle();
+    // 不用 `enterText`：它会先点一下正文，可能挪动光标（挪了就等于放弃刚设的格式），
+    // 而真机上用户是接着往下打、键盘连接一直没断。
+    tester.testTextInput.enterText('原样加粗');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(AppIcons.send));
+    await tester.pumpAndSettle();
+
+    expect(
+      api.sentMails.single.body,
+      contains('原样<span style="font-weight:700">加粗</span>'),
+    );
   });
 
   testWidgets('排版栏可左右滑动：对齐三格在内、「×」固定在最右', (WidgetTester tester) async {

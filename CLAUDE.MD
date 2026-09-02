@@ -44,7 +44,7 @@
 | 导入邮箱 | `lib/pages/import_page.dart` | CSV 文件导入 + 文本粘贴导入；格式说明卡；底部「确认导入」落安全存储 |
 | 邮件列表 | `lib/pages/mail_list_page.dart` | 某账号的 Graph 真实收件箱；下拉刷新 / 上滑翻页（`$skip`）；左滑归档 / 已读 / 删除；点击进详情并自动标已读；首屏转圈浮在整页正中（见 §4.7） |
 | 邮件详情 | `lib/pages/message_detail_page.dart` | 单封邮件；懒取全文与正文渲染**共用一个**转圈，浮在内容区正中（见 §4.7）；**整页一条滚动条**——滚动视图恒定铺满内容区（收件人 / 主题 / 日期 / 附件 / 正文一起上滑，HTML 交给按内容高度占位的 WebView，见 §5.5），返回栏与底部操作栏是浮在它上面的两条**绝对定位浮层**，上滑收起 / 下滑立刻切回（只做绘制期平移，滚动几何恒定，见 §5.5）；附件条（收起显示「N 个附件 + 总大小」，展开出图片预览与文件行，点击交给系统应用打开、打不开转下载） |
-| 新建邮件 | `lib/pages/compose_page.dart` | 顶栏（返回 / 附件 / 发送）+ 表单（收件人 / 抄送 / 密送 / 发件人 / 重要性 / 主题）+ 附件条 + 正文 + 底部两条工具栏（排版栏 / 撤销·重做·Aa·图片）；**表单与正文同在一条滚动条里**（`CustomScrollView`，正文走 `SliverFillRemaining(hasScrollBody:false)`）；收件人交互见 §5.6 |
+| 新建邮件 | `lib/pages/compose_page.dart` | 顶栏（返回 / 附件 / 发送）+ 表单（收件人 / 抄送 / 密送 / 发件人 / 重要性 / 主题）+ 附件条 + 正文 + 底部两条工具栏（排版栏 / 撤销·重做·Aa·图片）；**表单与正文同在一条滚动条里**（`CustomScrollView`，正文走 `SliverFillRemaining(hasScrollBody:false)`）；收件人交互见 §5.6，正文的选区级排版见 §5.7 |
 | 设置 | `lib/pages/settings_page.dart` | 主题（跟随系统 / 暗黑 / 亮白）+ 语言（中文 / English），分段控件切换，即时持久化 |
 
 > 设计稿（仓库根）：`邮件列表.jpg`、`邮件列表消息.jpg`、`邮件详情.jpg`、`长按操作.jpg`。新页面要求 **1:1 还原设计稿**。
@@ -305,13 +305,21 @@ HTML 正文交给**系统 WebView**（`webview_flutter`，iOS WKWebView / Androi
 - **三种形态**（每栏独立判定）：聚焦 → 灰色胶囊 + 行尾输入框；未聚焦且已填 → 折叠成一行
   主色文字（点一下回到聚焦）；未聚焦且为空 → 留着输入框。右侧 `+`（选系统联系人）
   只在**聚焦或该栏为空**时出现 —— 五张设计稿同时满足这一条。
+- **胶囊 + 输入框的排版是自写的 `_ChipsInput`（`MultiChildRenderObjectWidget`），不是
+  `Wrap`**：`Wrap` 给每个孩子的 maxWidth 都是**整行宽**，而 `TextField` 会铺满拿到的宽度
+  —— 于是只要前面有一枚胶囊就挤不下，输入框（连光标）被整体推到下一行，表现为
+  **收件人在这一行、光标在下一行**。`_ChipsInput` 让胶囊按行流下去，**最后一格（输入框）
+  拿当前行的余量**（不足 `_kMinInputWidth = 72` 才另起一行、占满整行），光标便紧跟在最后
+  一枚胶囊后面；输入框铺满行尾余量，顺带让胶囊右边那片空白也能点出光标。
+  代价：地址长过余量时在框内横向滚动，不再独占一整行。折叠态输入框留在树上但不参与排版
+  （零尺寸摆原点，`Offstage` 本来也不画它）。
 - **抄送 / 密送整行的显隐**：`_ccBccOpen = 有收件栏聚焦 || 抄送密送非空`。都空且失焦时三行
   折叠成一行「抄送/密送, 发件人：<账号>」；否则展开抄送 / 密送 / 发件人三行。
   已填过的抄送**绝不折叠** —— 那等于把收件人藏起来。
 - **两个 element 复用的坑**（都表现为「输入焦点被抢」，都靠 key 治）：
-  - 输入框在三种形态里必须待在**同一个 `Wrap` 的最后一格**且带 key，折叠态用 `Offstage`
-    藏而不是移出树。让它在「直接子级」与「Wrap 内」之间搬家，`EditableText` 会被重建 ——
-    **点一下输入框，键盘刚起来又立刻收回**。
+  - 输入框在三种形态里必须待在**同一个 `_ChipsInput` 的最后一格**且带 key，折叠态用
+    `Offstage` 藏而不是移出树。让它在「直接子级」与容器内部之间搬家，`EditableText` 会被
+    重建 —— **点一下输入框，键盘刚起来又立刻收回**。
   - `_FieldRow` 每行都要带 key。抄送 / 密送整行会增删，行数一变，无 key 的兄弟就按下标
     重新配对：主题那行的 `EditableText` 被当成另一个 widget 重建、焦点被踢掉，焦点作用域
     又把焦点还给上一个聚焦过的节点（收件人）—— 表现为**在主题里打字，字进了收件人**。
@@ -320,6 +328,8 @@ HTML 正文交给**系统 WebView**（`webview_flutter`，iOS WKWebView / Androi
   读）、不额外打接口。按最后一段输入模糊匹配名称或地址，已填过的人不再提示，最多 4 条。
   提示卡走 **`Overlay` + `LayerLink`**：排进 `Column` 会把下面几行往下顶，每敲一个字表单
   都跳一次。它不受视口裁剪，故滚动时（`ScrollUpdateNotification`）主动收掉。
+  `LayerLink` 贴的是**整块收件人内容区**（`_ChipsInput`）而不是输入框 —— 输入框只占行尾
+  余量，贴它会得到一张又窄又从行中间起头的卡片。
 - **点胶囊**弹「删除 / 编辑 / 移至抄送 / 移至密送」（`showMenu` 贴着被点的那一枚）。
   「移至」只列另外两栏；「编辑」= 删胶囊 + 把地址放回输入框。同一地址在三栏间唯一
   （`ComposeContact` 按地址大小写不敏感判等）。
@@ -327,6 +337,45 @@ HTML 正文交给**系统 WebView**（`webview_flutter`，iOS WKWebView / Androi
   那个 ▾ 没做成账号切换（换发件人要换 token / 可能撞上未授权 `Mail.Send`）。
 - 抄送 / 密送随发信一起下发（`MailApi.sendMail` 的 `cc` / `bcc` → Graph
   `ccRecipients` / `bccRecipients`，空列表不下发该字段），三栏地址都过一遍格式校验。
+
+### 5.7 新建邮件正文的选区级排版
+
+字号 / 加粗 / 斜体 / 下划线 / 颜色是**选区级**的：选中一段再点，只有那一段变。曾经这五项
+都整篇套用（`TextField.style` 一改，全篇文字跟着变），用户反馈「我期望只针对所选文案」。
+
+- **模型是一份与正文等长的逐字格式表**（`lib/data/compose_rich_text.dart` 的
+  `ComposeTextFormat`，纯函数 + 值相等，可单测）。刻意**不引富文本引擎**
+  （flutter_quill 那类）：底部两条工具栏、收件人三栏与整页滚动都是按设计稿 1:1 写的，
+  换引擎等于连编辑器一起换掉；而这里只要五种字符级属性，一份格式表就够，`TextField`
+  自带的光标 / 选择菜单 / 输入法 / 撤销全部照旧。
+- **每个字都记一份完整格式**，不是「只记与基准不同的那几项」：正文 `TextField` 的基础样式
+  要跟着光标处的字号走（光标高度、空正文时的提示文字都看它），若某些字靠继承基础样式取值，
+  改一次字号就会串到本该保持原样的旧文字上 —— 那正是原来的病根。
+  例外只有颜色：`null` 就是「跟随主题」，靠继承基础样式实现，故**基础样式的颜色只能是
+  `palette.textPrimary`**（若按光标处的颜色给，光标停在红字里时别处没上色的字会一起变红）。
+- **渲染**：`_RichBodyController extends TextEditingController` 覆写 `buildTextSpan`，
+  把格式表合并成尽量少的段（`composeTextRuns`）再各自 `TextSpan`；输入法正在拼的那一段
+  照惯例加下划线（与基类默认行为一致）。
+- **`strutStyle: StrutStyle.disabled` 是必需的**：`EditableText` 默认
+  `StrutStyle.fromTextStyle(style, forceStrutHeight: true)`，会按基础字号把每行行高**焊死**
+  —— 混排大字号那几段会被压扁 / 叠在一起。关掉 strut 后每行按自己那几段的实际字号排；
+  正文统一字号时观感与原来一致（行高由 `TextStyle.height = 1.5` 决定，与 strut 无关）。
+- **格式跟着文字挪**：编辑框只交出「改完之后的整段文字」（输入法、粘贴、撤销都一样），
+  故每次 `value` 变更先按 `composeTextEdit`（公共前后缀之差）求出改了哪一段，再
+  `composeSpliceFormats` 挪格式表；新插入的字继承左边那个字（行首取右边），同系统编辑器。
+- **没有选区时，工具栏设的是「接下来要打的字」**（`_pending`，Word / Gmail 同款），
+  光标被挪去别处即作废 —— 但**首次落焦点不算挪**（此前压根没有有效选区），否则
+  「先在工具栏选好颜色、再点进正文打字」一进去就把颜色丢了。
+- **排版栏显示光标处的格式**（`_shownFormat` ← `formatAtCursor`）：光标停在粗体里 B 就亮着。
+  它缓存在页面 State 里，只在派生值真的变了时 `setState` —— 否则每敲一个字整页都重建一次。
+  选区里粗细不一时按**选区头一个字**取反，与系统编辑器一致。
+- **对齐 / 列表 / 缩进仍是段落级的**：对齐走 `TextField.textAlign`（整篇），列表与缩进靠在
+  行首插字符近似。字符级格式表管不着这些。
+- **发信**：`composeBodyHtml` 一个字都没排版过且左对齐 → 纯文本直发；否则包一层
+  `<div style="white-space:pre-wrap;font-size:16px[;text-align:…]">`，**只给非默认格式的段各包
+  一个 `<span>`**，文字一律转义。
+- **已知取舍**：格式**不进撤销栈**（`UndoHistoryController` 只管文字），撤销回来的那段文字取
+  邻居的格式，重新选一次即可，不至于丢内容。
 
 ---
 
@@ -354,7 +403,7 @@ lib/
     network/                dio 封装、统一契约、错误映射、拦截器
     auth/                   token_store / token_service / credentials_store / health_service
     storage/                secure_storage 抽象
-  data/                     account_import / mail_mapper（纯函数）/ mail_html_document / mock_mails
+  data/                     account_import / mail_mapper（纯函数）/ mail_html_document / compose_rich_text / mock_mails
   models/                   account.dart / mail.dart
   pages/                    home / import / mail_list / message_detail / compose / settings
   widgets/                  stat_card / account_tile / mail_tile / app_refresh / segmented_selector / search_field / mail_html_view
@@ -383,7 +432,7 @@ api-test/                   Node 换 token 脚本（gitignore，不入库）
 
 ### 9.1 提交前必做
 1. `flutter analyze` —— 必须**零问题**。
-2. `flutter test` —— 全量通过（当前 142 个用例，随功能增减）。
+2. `flutter test` —— 全量通过（当前 153 个用例，随功能增减）。
 3. 改了 arb 文案 → `flutter gen-l10n`。
 4. 尽快 commit（历史上曾整套 MVP 文件丢失、无 commit，务必防再次丢失）。
 

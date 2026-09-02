@@ -1,9 +1,18 @@
+import 'dart:math' as math;
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart'
+    show
+        BoxHitTestResult,
+        ContainerBoxParentData,
+        ContainerRenderObjectMixin,
+        RenderBoxContainerDefaultsMixin;
 
 import '../api/api_scope.dart';
 import '../api/mail_api.dart';
 import '../core/contacts/contact_picker.dart';
+import '../data/compose_rich_text.dart';
 import '../data/mail_mapper.dart';
 import '../l10n/app_localizations.dart';
 import '../models/mail.dart';
@@ -46,7 +55,8 @@ enum _ChipAction { delete, edit, toTo, toCc, toBcc }
 /// （点空白处也能落焦点），多了就把页面撑长。
 ///
 /// **收件人三栏的三种形态**（见 `UI/收件人-*.jpg`、`UI/发件人-*.jpg`）：
-/// - **聚焦**：已填的人是灰色胶囊（[_RecipientChip]），后面跟着输入框；输入时下方浮出
+/// - **聚焦**：已填的人是灰色胶囊（[_RecipientChip]），**输入框紧跟在最后一枚胶囊后面**
+///   、吃掉那一行剩下的宽度（[_ChipsInput]）；输入时下方浮出
 ///   候选提示卡（[_SuggestionCard]）；点胶囊弹「删除 / 编辑 / 移至抄送 / 移至密送」。
 /// - **未聚焦且已填**：折叠成一行主色文字（省地方，设计稿如此），点一下回到聚焦态。
 /// - **未聚焦且为空**：留着输入框，光标随时可落。
@@ -56,10 +66,11 @@ enum _ChipAction { delete, edit, toTo, toCc, toBcc }
 /// 「抄送/密送, 发件人：<账号>」（`UI/发件人-无抄送&密送.jpg`）；一旦点进任一收件栏
 /// 或已填了抄送 / 密送，就展开成抄送 / 密送 / 发件人三行（`UI/发件人-点击发件人输入框.jpg`）。
 ///
-/// 排版工具栏的取舍：正文是**纯文本** [TextField]，没有富文本引擎，所以字号 / 加粗 /
-/// 斜体 / 下划线 / 颜色 / 对齐都**整篇套用**（不是选区富文本）；两个列表按钮在光标所在
-/// 行行首插入 `• ` / `N. ` 前缀，缩进按钮同理增删行首空格。排版项多于一屏，故排版栏
-/// 可左右滑动，「×」用竖线隔开固定在最右侧（设计稿如此）。
+/// 排版工具栏：字号 / 加粗 / 斜体 / 下划线 / 颜色是**选区级**的 —— 选中一段再点，
+/// 只有那一段变（逐字格式表 + 自绘 `TextSpan`，见 [_RichBodyController]）；没有选区
+/// 时设的是「接下来要打的字」。对齐仍是整篇的（`TextField.textAlign`），两个列表按钮
+/// 在光标所在行行首插入 `• ` / `N. ` 前缀，缩进按钮同理增删行首空格。排版项多于一屏，
+/// 故排版栏可左右滑动，「×」用竖线隔开固定在最右侧（设计稿如此）。
 ///
 /// 附件走 Graph 的小附件形式（base64 内嵌进 sendMail），原始字节总量上限
 /// [_ComposePageState._kMaxAttachBytes]。
@@ -112,7 +123,9 @@ class _ComposePageState extends State<ComposePage> {
   OverlayEntry? _suggestionOverlay;
 
   final TextEditingController _subject = TextEditingController();
-  final TextEditingController _body = TextEditingController();
+
+  /// 正文 —— 逐字记格式，选区级排版全靠它（见 [_RichBodyController]）。
+  final _RichBodyController _body = _RichBodyController();
   final FocusNode _bodyFocus = FocusNode();
 
   /// 正文的撤销 / 重做 —— 复用 Flutter 自带编辑历史，底部按钮据此置灰。
@@ -126,19 +139,19 @@ class _ComposePageState extends State<ComposePage> {
   /// 发送中 —— 顶栏纸飞机换转圈、按钮禁用，避免重复提交。
   bool _sending = false;
 
-  // ---- 正文排版态（整篇套用，非选区富文本）----
+  // ---- 正文排版态 ----
   bool _formatBarOpen = true;
 
   /// 排版栏这一行当前显示什么 —— 工具按钮 / 字号条 / 颜色条。
   _FormatPanel _panel = _FormatPanel.tools;
 
-  double _fontSize = 16;
-  bool _bold = false;
-  bool _italic = false;
-  bool _underline = false;
-  Color? _color;
+  /// 排版栏显示的那一套格式 = **光标 / 选区处**的格式（Gmail 同款：光标停在粗体里，
+  /// B 就是亮的）。它由 [_RichBodyController.formatAtCursor] 派生，缓存下来只为
+  /// 「没变就不重建」—— 否则每敲一个字整页都要重建一次。
+  ComposeTextFormat _shownFormat = ComposeTextFormat.plain;
 
-  /// 正文整篇对齐 —— 只用 left / center / right（设计稿三格）。
+  /// 正文整篇对齐 —— 只用 left / center / right（设计稿三格）。对齐是段落级属性，
+  /// 纯文本 `TextField` 只能整篇给，故它不像字号 / 加粗那样按选区走。
   TextAlign _align = TextAlign.left;
 
   /// 已选附件（原始字节留在内存，发送时才 base64）。
@@ -168,7 +181,8 @@ class _ComposePageState extends State<ComposePage> {
   /// base64 会放大约 1/3，留出正文与协议头的余量。
   static const int _kMaxAttachBytes = 3 * 1024 * 1024;
 
-  /// 缩进单位 —— 无富文本引擎，用行首空格近似（HTML 输出靠 `white-space:pre-wrap` 保留）。
+  /// 缩进单位 —— 缩进是段落级的，逐字格式表管不着，故用行首空格近似
+  /// （HTML 输出靠 `white-space:pre-wrap` 保留）。
   static const String _kIndentUnit = '    ';
 
   /// 候选提示最多给几条 —— 提示卡是浮层，再多会盖住整张表单。
@@ -181,6 +195,7 @@ class _ComposePageState extends State<ComposePage> {
       _input[field]!.addListener(() => _onInputChanged(field));
       _node[field]!.addListener(() => _onFocusChanged(field));
     }
+    _body.addListener(_onBodyFormatChanged);
   }
 
   @override
@@ -195,6 +210,24 @@ class _ComposePageState extends State<ComposePage> {
     _bodyFocus.dispose();
     _undo.dispose();
     super.dispose();
+  }
+
+  /// 正文的文字 / 光标一动，排版栏要跟着显示**光标处**的格式。
+  ///
+  /// 只在派生出的格式真的变了时重建：光标在同一段格式里挪动、连续打字都不该让整页重建
+  /// （正文自己会重画）。
+  void _onBodyFormatChanged() {
+    final format = _body.formatAtCursor;
+    if (format == _shownFormat) return;
+    setState(() => _shownFormat = format);
+  }
+
+  /// 开关型格式（粗 / 斜 / 下划线）—— 按当前显示的那一套取反后落到选区。
+  ///
+  /// 选区里粗细不一时以**选区头一个字**为准（[_shownFormat] 就是它），与系统编辑器一致。
+  void _toggleAttribute(ComposeTextAttribute attribute) {
+    final on = !_shownFormat.attribute(attribute);
+    _body.applyFormat((format) => format.withAttribute(attribute, on));
   }
 
   /// 抄送 / 密送（以及独立的「发件人」行）要不要展开。
@@ -329,7 +362,9 @@ class _ComposePageState extends State<ComposePage> {
     }
     final entry = OverlayEntry(
       builder: (context) => Positioned(
-        // 宽度跟着输入框走（`leaderSize` 首帧可能还没量到，退回一个够用的值）。
+        // 宽度跟着**整块收件人内容区**走（`leaderSize` 首帧可能还没量到，退回一个够用
+        // 的值）—— 贴的是 [_ChipsInput] 而不是输入框：输入框只占行尾余量，贴它会得到
+        // 一张又窄又从行中间起头的卡片。
         width: _link[field]!.leaderSize?.width ?? 240,
         child: CompositedTransformFollower(
           link: _link[field]!,
@@ -534,7 +569,7 @@ class _ComposePageState extends State<ComposePage> {
     );
   }
 
-  /// 在光标所在行行首插入列表前缀 —— 无富文本引擎，用纯文本近似。
+  /// 在光标所在行行首插入列表前缀 —— 列表是段落级的，用纯文本近似。
   ///
   /// 有序列表续上一行的编号（上一行是「3. …」则本行为 `4. `），否则从 1 起。
   void _insertListPrefix({required bool numbered}) {
@@ -700,42 +735,11 @@ class _ComposePageState extends State<ComposePage> {
   bool _looksLikeEmail(String value) =>
       RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(value);
 
-  /// 把正文与整篇排版态转成 Graph 可发送的正文（内容 + 是否 HTML）。
-  ///
-  /// 无任何格式改动 → 纯文本直发；一旦启用字号/加粗/斜体/下划线/颜色/对齐，
-  /// 就包一层带内联样式的 `<div>`（`white-space:pre-wrap` 保留换行、空格与缩进），
-  /// 并转义 HTML 特殊字符，避免正文里的 `<`/`&` 破坏结构。
-  ({String content, bool isHtml}) _composeBody() {
-    final text = _body.text;
-    final hasFormat =
-        _bold ||
-        _italic ||
-        _underline ||
-        _color != null ||
-        _fontSize != 16 ||
-        _align != TextAlign.left;
-    if (!hasFormat) return (content: text, isHtml: false);
-
-    final styles = <String>[
-      'white-space:pre-wrap',
-      'font-size:${_fontSize.toInt()}px',
-      if (_align != TextAlign.left) 'text-align:${_align.name}',
-      if (_bold) 'font-weight:700',
-      if (_italic) 'font-style:italic',
-      if (_underline) 'text-decoration:underline',
-      if (_color != null)
-        'color:#${(_color!.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}',
-    ];
-    return (
-      content: '<div style="${styles.join(';')}">${_escapeHtml(text)}</div>',
-      isHtml: true,
-    );
-  }
-
-  String _escapeHtml(String s) => s
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;');
+  /// 把正文与逐字格式转成 Graph 可发送的正文（内容 + 是否 HTML），见 [composeBodyHtml]：
+  /// 一个字都没排版过且左对齐 → 纯文本直发；否则包一层 `<div>`，被排版过的每一段各自
+  /// 包一个 `<span>`。
+  ({String content, bool isHtml}) _composeBody() =>
+      composeBodyHtml(text: _body.text, formats: _body.formats, align: _align);
 
   /// 发送邮件 —— 校验收件人 → 调 Graph `sendMail` → 成功返回列表并提示，失败留在原页。
   ///
@@ -948,12 +952,14 @@ class _ComposePageState extends State<ComposePage> {
   /// 一栏收件人 —— 三种形态见类注释。
   ///
   /// 折叠成一行文字时**整行可点**（点了就回到聚焦态）；`+`（选系统联系人）只在聚焦或
-  /// 该栏为空时出现。输入框套 [CompositedTransformTarget]，候选提示卡贴着它弹。
+  /// 该栏为空时出现。候选提示卡贴着**整块内容区**弹（`CompositedTransformTarget`
+  /// 套在 [_ChipsInput] 外面而不是输入框上）—— 输入框现在只占行尾那点余量，贴着它弹
+  /// 会得到一张又窄又从行中间起头的卡片。
   ///
-  /// **输入框的位置必须是稳定的**：三种形态都把它放在同一个 `Wrap` 的最后一格，且带 key。
-  /// 一旦让它在「直接子级」与「Wrap 里」之间搬家，`EditableText` 的 element 会被重建 ——
-  /// 表现为**点一下输入框、键盘刚起来又立刻收回**（聚焦触发重建、重建又把焦点弄丢）。
-  /// 折叠态用 [Offstage] 把它藏起来而不是移出树，同样是为了保住那个 element。
+  /// **输入框的位置必须是稳定的**：三种形态都把它放在同一个 [_ChipsInput] 的最后一格，
+  /// 且带 key。一旦让它在「直接子级」与容器内部之间搬家，`EditableText` 的 element 会被
+  /// 重建 —— 表现为**点一下输入框、键盘刚起来又立刻收回**（聚焦触发重建、重建又把焦点
+  /// 弄丢）。折叠态用 [Offstage] 把它藏起来而不是移出树，同样是为了保住那个 element。
   Widget _recipientRow(
     _Field field,
     String label,
@@ -982,41 +988,39 @@ class _ComposePageState extends State<ComposePage> {
               icon: Icon(AppIcons.add, color: palette.textPrimary, size: 24),
             )
           : null,
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 6,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          if (collapsed)
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => _node[field]!.requestFocus(),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                child: Text(
-                  picked.map((c) => c.label).join('; '),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: palette.primary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
+      child: CompositedTransformTarget(
+        link: _link[field]!,
+        child: _ChipsInput(
+          inputHidden: collapsed,
+          children: [
+            if (collapsed)
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _node[field]!.requestFocus(),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  child: Text(
+                    picked.map((c) => c.label).join('; '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: palette.primary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-              ),
-            )
-          else
-            for (final contact in picked)
-              _RecipientChip(
-                label: contact.label,
-                tooltip: l10n.composeRecipientOptions,
-                onTap: (anchor) => _openChipMenu(field, contact, anchor),
-              ),
-          Offstage(
-            key: Key('compose-${field.name}-input'),
-            offstage: collapsed,
-            child: CompositedTransformTarget(
-              link: _link[field]!,
+              )
+            else
+              for (final contact in picked)
+                _RecipientChip(
+                  label: contact.label,
+                  tooltip: l10n.composeRecipientOptions,
+                  onTap: (anchor) => _openChipMenu(field, contact, anchor),
+                ),
+            Offstage(
+              key: Key('compose-${field.name}-input'),
+              offstage: collapsed,
               child: _inlineField(
                 _input[field]!,
                 valueStyle,
@@ -1031,8 +1035,8 @@ class _ComposePageState extends State<ComposePage> {
                 },
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1121,9 +1125,10 @@ class _ComposePageState extends State<ComposePage> {
   }
 
   /// 正文 —— 排在 `SliverFillRemaining` 里：至少占满剩余高度，内容多了就把页面撑长
-  /// （不再自己 `expands`，否则整页没法滚）。排版态整篇套用。
+  /// （不再自己 `expands`，否则整页没法滚）。逐字格式在
+  /// [_RichBodyController.buildTextSpan] 里叠到这里给的基础样式上。
   Widget _buildBody(AppPalette palette, AppLocalizations l10n) {
-    final color = _color ?? palette.textPrimary;
+    final format = _shownFormat;
     return TextField(
       key: const Key('compose-body-field'),
       controller: _body,
@@ -1134,18 +1139,31 @@ class _ComposePageState extends State<ComposePage> {
       textAlignVertical: TextAlignVertical.top,
       keyboardType: TextInputType.multiline,
       cursorColor: palette.primary,
+      // 各段字号可以不同 —— 默认 strut 会按基础样式把每行行高**焊死**
+      // （`StrutStyle.fromTextStyle(style, forceStrutHeight: true)`），大字号那几段
+      // 就会被压扁、上下叠在一起。关掉 strut，每行按自己那几段的实际字号排。
+      strutStyle: StrutStyle.disabled,
       style: TextStyle(
-        color: color,
-        fontSize: _fontSize,
+        // 基础样式的**颜色只能是主题正文色**：某段字的 color 为 null 就是「跟随主题」，
+        // 靠继承这里取值 —— 若按光标处的颜色给，光标停在红字里时，别处没上色的字会跟着变红。
+        color: palette.textPrimary,
+        decorationColor: palette.textPrimary,
         height: 1.5,
-        fontWeight: _bold ? FontWeight.w700 : FontWeight.w400,
-        fontStyle: _italic ? FontStyle.italic : FontStyle.normal,
-        decoration: _underline ? TextDecoration.underline : TextDecoration.none,
-        decorationColor: color,
+        // 其余几项逐字都会显式覆盖，串不到旧文字上；这里按光标处那一套给，是为了让
+        // 光标高度、空正文时的提示文字与「接下来要打的字」对得上。
+        fontSize: format.fontSize,
+        fontWeight: format.bold ? FontWeight.w700 : FontWeight.w400,
+        fontStyle: format.italic ? FontStyle.italic : FontStyle.normal,
+        decoration: format.underline
+            ? TextDecoration.underline
+            : TextDecoration.none,
       ),
       decoration: InputDecoration(
         hintText: l10n.composeBodyHint,
-        hintStyle: TextStyle(color: palette.textSecondary, fontSize: _fontSize),
+        hintStyle: TextStyle(
+          color: palette.textSecondary,
+          fontSize: format.fontSize,
+        ),
         border: InputBorder.none,
         contentPadding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
       ),
@@ -1200,18 +1218,18 @@ class _ComposePageState extends State<ComposePage> {
       _buildFontSizePicker(palette),
       _ToolButton(
         icon: AppIcons.bold,
-        active: _bold,
-        onTap: () => setState(() => _bold = !_bold),
+        active: _shownFormat.bold,
+        onTap: () => _toggleAttribute(ComposeTextAttribute.bold),
       ),
       _ToolButton(
         icon: AppIcons.italic,
-        active: _italic,
-        onTap: () => setState(() => _italic = !_italic),
+        active: _shownFormat.italic,
+        onTap: () => _toggleAttribute(ComposeTextAttribute.italic),
       ),
       _ToolButton(
         icon: AppIcons.underline,
-        active: _underline,
-        onTap: () => setState(() => _underline = !_underline),
+        active: _shownFormat.underline,
+        onTap: () => _toggleAttribute(ComposeTextAttribute.underline),
       ),
       _buildColorPicker(palette),
       _ToolButton(
@@ -1266,7 +1284,7 @@ class _ComposePageState extends State<ComposePage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              '${_fontSize.toInt()}',
+              '${_shownFormat.fontSize.toInt()}',
               style: TextStyle(
                 color: color,
                 fontSize: 16,
@@ -1280,27 +1298,27 @@ class _ComposePageState extends State<ComposePage> {
     );
   }
 
-  /// 文字颜色入口 —— 图标染成当前色，点开把整行换成横向色点条。
+  /// 文字颜色入口 —— 图标染成光标处的颜色，点开把整行换成横向色点条。
   Widget _buildColorPicker(AppPalette palette) {
     return _ToolButton(
       icon: AppIcons.textColor,
       active: _panel == _FormatPanel.color,
       onTap: () => setState(() => _panel = _FormatPanel.color),
-      iconColor: _color,
+      iconColor: _shownFormat.color,
     );
   }
 
-  /// 横向字号条 —— 点一下即生效并切回排版栏。
+  /// 横向字号条 —— 点一下即落到选区（没选区就是「接下来要打的字」）并切回排版栏。
   List<Widget> _fontSizeOptions(AppPalette palette) {
     return <Widget>[
       for (final size in _fontSizes)
         _OptionChip(
           label: '${size.toInt()}',
-          selected: size == _fontSize,
-          onTap: () => setState(() {
-            _fontSize = size;
-            _panel = _FormatPanel.tools;
-          }),
+          selected: size == _shownFormat.fontSize,
+          onTap: () {
+            _body.applyFormat((format) => format.withFontSize(size));
+            setState(() => _panel = _FormatPanel.tools);
+          },
         ),
     ];
   }
@@ -1312,11 +1330,15 @@ class _ComposePageState extends State<ComposePage> {
       for (var i = 0; i < colors.length; i++)
         _ColorDot(
           color: colors[i],
-          selected: i == 0 ? _color == null : _color == colors[i],
-          onTap: () => setState(() {
-            _color = i == 0 ? null : colors[i];
-            _panel = _FormatPanel.tools;
-          }),
+          selected: i == 0
+              ? _shownFormat.color == null
+              : _shownFormat.color == colors[i],
+          onTap: () {
+            _body.applyFormat(
+              (format) => format.withColor(i == 0 ? null : colors[i]),
+            );
+            setState(() => _panel = _FormatPanel.tools);
+          },
         ),
     ];
   }
@@ -1383,6 +1405,130 @@ class _ComposePageState extends State<ComposePage> {
   }
 }
 
+/// 正文控制器 —— **每个字符记一份 [ComposeTextFormat]**，渲染时按段合并成 `TextSpan`。
+/// 选中一段设字号 / 加粗 / 斜体 / 下划线 / 颜色，只有那一段变。
+///
+/// 为什么不引富文本引擎（flutter_quill 那类）：底部两条工具栏、收件人三栏与整页布局都是
+/// 按设计稿 1:1 写的，换引擎等于连编辑器一起换掉；而这里要的只是五种**字符级**属性，
+/// 一份与正文等长的格式表就够 —— `TextField` 的光标、选择菜单、输入法、撤销全部照旧。
+///
+/// 三条约定：
+/// - **格式跟着文字挪**：编辑框只给「改完之后的整段文字」，故每次 [value] 变更都先按
+///   [composeTextEdit] 求出改了哪一段，再用 [composeSpliceFormats] 挪格式表。新插入的字
+///   继承左边那个字的格式（行首取右边），与系统编辑器一致。
+/// - **空选区时点工具栏 = 设定「接下来要打的字」**（[_pending]，Word / Gmail 同款）；光标被
+///   挪去别处即作废 —— 但**首次落焦点不算挪**（此前压根没有有效选区），否则「先在工具栏选好
+///   颜色、再点进正文打字」会一进去就把选好的颜色丢掉。
+/// - **格式不进撤销栈**：`UndoHistoryController` 只管文字，撤销回来的那段文字取邻居的格式
+///   （已知取舍：重新选一次即可，不至于丢内容）。
+class _RichBodyController extends TextEditingController {
+  /// 与 `text` 等长的逐字格式表（一格一个 UTF-16 码元，故下标与 `String` 通用）。
+  List<ComposeTextFormat> _formats = <ComposeTextFormat>[];
+
+  /// 空选区时点工具栏设下的格式 —— 只作用于接下来插入的字。
+  ComposeTextFormat? _pending;
+
+  /// 发信时按它序列化（[composeBodyHtml]）。
+  List<ComposeTextFormat> get formats =>
+      List<ComposeTextFormat>.unmodifiable(_formats);
+
+  /// 排版栏该显示、也是下一次改动该基于的那一套格式。
+  ///
+  /// 有选区看**选区头一个字**；只有光标时看它**前面**那个字（刚打出来的字什么样，接着打
+  /// 就该什么样）；刚点过工具栏则看 [_pending]。
+  ComposeTextFormat get formatAtCursor {
+    final pending = _pending;
+    if (pending != null) return pending;
+    if (_formats.isEmpty) return ComposeTextFormat.plain;
+    final selection = value.selection;
+    // 还没落过焦点 —— 当作光标在末尾（真要打字也是从那儿续上）。
+    if (!selection.isValid) return _formats.last;
+    final at = selection.isCollapsed ? selection.start - 1 : selection.start;
+    return _formats[at.clamp(0, _formats.length - 1)];
+  }
+
+  /// 把一次格式改动落到**当前选区**；没有选区（只有光标）时只影响接下来打的字。
+  void applyFormat(ComposeTextFormat Function(ComposeTextFormat) change) {
+    final selection = value.selection;
+    if (!selection.isValid || selection.isCollapsed) {
+      _pending = change(formatAtCursor);
+    } else {
+      final start = selection.start.clamp(0, _formats.length);
+      final end = selection.end.clamp(0, _formats.length);
+      for (var i = start; i < end; i++) {
+        _formats[i] = change(_formats[i]);
+      }
+      _pending = null;
+    }
+    // 文字没变、只有样式变了 —— 不通知的话 `EditableText` 不会重新取 [buildTextSpan]。
+    notifyListeners();
+  }
+
+  @override
+  set value(TextEditingValue newValue) {
+    if (newValue.text != value.text) {
+      final edit = composeTextEdit(value.text, newValue.text);
+      _formats = composeSpliceFormats(
+        formats: _formats,
+        start: edit.start,
+        removed: edit.removed,
+        inserted: edit.inserted,
+        insertFormat: _pending ?? _formatBefore(edit.start),
+      );
+    } else if (value.selection.isValid &&
+        newValue.selection != value.selection) {
+      _pending = null;
+    }
+    super.value = newValue;
+  }
+
+  /// 插入点继承谁的格式 —— 左边那个字，行首取右边那个。
+  ComposeTextFormat _formatBefore(int start) {
+    if (_formats.isEmpty) return ComposeTextFormat.plain;
+    final at = start > 0 ? start - 1 : 0;
+    return _formats[at.clamp(0, _formats.length - 1)];
+  }
+
+  @override
+  TextSpan buildTextSpan({
+    required BuildContext context,
+    TextStyle? style,
+    required bool withComposing,
+  }) {
+    if (text.isEmpty) return TextSpan(style: style, text: text);
+    // 输入法正在拼的那一段照惯例加下划线（基类的默认实现也是这么干的）。
+    final composing = withComposing && value.isComposingRangeValid
+        ? value.composing
+        : null;
+
+    final children = <TextSpan>[];
+    for (final run in composeTextRuns(text, _formats)) {
+      final runStyle =
+          style?.merge(run.format.styleOverride) ?? run.format.styleOverride;
+      final from = (composing?.start ?? run.end).clamp(run.start, run.end);
+      final to = (composing?.end ?? run.end).clamp(from, run.end);
+      void add(int start, int end, {bool underlined = false}) {
+        if (end <= start) return;
+        children.add(
+          TextSpan(
+            text: text.substring(start, end),
+            style: underlined
+                ? runStyle.merge(
+                    const TextStyle(decoration: TextDecoration.underline),
+                  )
+                : runStyle,
+          ),
+        );
+      }
+
+      add(run.start, from);
+      add(from, to, underlined: true);
+      add(to, run.end);
+    }
+    return TextSpan(style: style, children: children);
+  }
+}
+
 /// 表单行 —— 左侧灰色标签 + 内容区 + 可选尾部按钮，底部一条 1px 分隔线。
 ///
 /// **每一行都要带稳定的 key**（见 `_buildFields`）：抄送 / 密送整行会随交互增删，行数一变，
@@ -1422,6 +1568,153 @@ class _FieldRow extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// 胶囊按行流下去、**输入框吃掉当前行剩下的宽度**（最后一个孩子固定是输入框）。
+///
+/// 为什么不用 `Wrap`：`Wrap` 给每个孩子的 maxWidth 都是**整行宽**，而 `TextField` 会
+/// 铺满拿到的宽度 —— 于是只要前面有一枚胶囊就挤不下，输入框（连光标）被整体推到下一行，
+/// 表现为**收件人在这一行、光标在下一行**。这里给输入框的是**当前行的余量**
+/// （余量不足 [_kMinInputWidth] 才另起一行、占满整行），光标便紧跟在最后一枚胶囊后面。
+/// 顺带治了另一件事：输入框铺满行尾余量，点胶囊右边那片空白也能落焦点（同系统邮件客户端）。
+///
+/// 代价：地址长过行尾余量时在框内横向滚动（余量至少 [_kMinInputWidth]，够看清正在敲的
+/// 几个字符），不再像原来那样独占一整行。
+class _ChipsInput extends MultiChildRenderObjectWidget {
+  const _ChipsInput({required this.inputHidden, required super.children});
+
+  /// 折叠态：输入框只是留在树上保住 element（见 `_recipientRow`），不参与排版。
+  final bool inputHidden;
+
+  @override
+  _RenderChipsInput createRenderObject(BuildContext context) =>
+      _RenderChipsInput(inputHidden);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderChipsInput renderObject,
+  ) {
+    renderObject.inputHidden = inputHidden;
+  }
+}
+
+/// 胶囊之间的横向间距 / 行距，以及行尾输入框的最小可用宽度。
+const double _kChipSpacing = 8;
+const double _kChipRunSpacing = 6;
+const double _kMinInputWidth = 72;
+
+class _ChipsInputParentData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderChipsInput extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _ChipsInputParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _ChipsInputParentData> {
+  _RenderChipsInput(this._inputHidden);
+
+  bool get inputHidden => _inputHidden;
+  bool _inputHidden;
+  set inputHidden(bool value) {
+    if (_inputHidden == value) return;
+    _inputHidden = value;
+    markNeedsLayout();
+  }
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _ChipsInputParentData) {
+      child.parentData = _ChipsInputParentData();
+    }
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) =>
+      defaultPaint(context, offset);
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      defaultHitTestChildren(result, position: position);
+
+  @override
+  void performLayout() {
+    // 宽度由 `_FieldRow` 的 `Expanded` 给死；高度不限（行数越多越高）。
+    assert(constraints.hasBoundedWidth);
+    final maxWidth = constraints.maxWidth;
+    final children = getChildrenAsList();
+    final input = children.isEmpty ? null : children.last;
+    final chips = children.isEmpty
+        ? const <RenderBox>[]
+        : children.sublist(0, children.length - 1);
+
+    // 一行里的孩子先按「行顶」记下 dy，等这行收尾（知道了行高）再统一垂直居中。
+    final run = <RenderBox>[];
+    double x = 0; // 当前行已占宽度
+    double y = 0; // 当前行行顶
+    double runHeight = 0;
+
+    void closeRun() {
+      for (final child in run) {
+        final data = child.parentData! as _ChipsInputParentData;
+        data.offset = Offset(
+          data.offset.dx,
+          y + (runHeight - child.size.height) / 2,
+        );
+      }
+      run.clear();
+    }
+
+    void place(RenderBox child) {
+      (child.parentData! as _ChipsInputParentData).offset = Offset(x, y);
+      run.add(child);
+      x += child.size.width;
+      runHeight = math.max(runHeight, child.size.height);
+    }
+
+    void newRun() {
+      closeRun();
+      y += runHeight + _kChipRunSpacing;
+      x = 0;
+      runHeight = 0;
+    }
+
+    for (final chip in chips) {
+      chip.layout(BoxConstraints(maxWidth: maxWidth), parentUsesSize: true);
+      if (x == 0) {
+        place(chip);
+      } else if (x + _kChipSpacing + chip.size.width > maxWidth) {
+        newRun();
+        place(chip);
+      } else {
+        x += _kChipSpacing;
+        place(chip);
+      }
+    }
+
+    if (input != null) {
+      if (_inputHidden) {
+        // 折叠态：零尺寸摆在原点，不占位、不进行内的居中计算（`Offstage` 也不画它）。
+        input.layout(BoxConstraints.tight(Size.zero));
+        (input.parentData! as _ChipsInputParentData).offset = Offset.zero;
+      } else {
+        var free = x == 0 ? maxWidth : maxWidth - x - _kChipSpacing;
+        if (free < _kMinInputWidth && x > 0) {
+          newRun(); // 行尾余量太窄 → 另起一行、整行都归它
+          free = maxWidth;
+        } else if (x > 0) {
+          x += _kChipSpacing;
+        }
+        free = math.max(free, 0);
+        // 宽度给死：`TextField` 会铺满它 —— 这正是「光标紧跟胶囊、空白处也能点」的由来。
+        input.layout(
+          BoxConstraints(minWidth: free, maxWidth: free),
+          parentUsesSize: true,
+        );
+        place(input);
+      }
+    }
+    closeRun();
+    size = constraints.constrain(Size(maxWidth, y + runHeight));
   }
 }
 
