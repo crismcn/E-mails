@@ -1,6 +1,5 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show RenderClipRect;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -81,10 +80,9 @@ void main() {
     expect(html, contains('https://example.com/detail'));
     expect(html, contains('前往安全中心'));
     expect(html, contains('<meta name="viewport"'));
-    // 正文按页内量到的高度占位 → 需要那一段量高脚本（带 nonce，邮件自带的进不来）。
-    expect(html, contains("script-src 'nonce-"));
-    expect(html, contains('<script nonce="'));
-    expect('<script'.allMatches(html).length, 1);
+    // 正文 WebView 是有界视口自滚，不再量高 —— 整份文档无任何脚本，CSP 收紧到 none。
+    expect(html, contains("script-src 'none'"));
+    expect('<script'.allMatches(html).length, 0);
   });
 
   testWidgets('点击列表项 → 详情页懒取纯文本全文按纯文本渲染', (WidgetTester tester) async {
@@ -227,84 +225,100 @@ void main() {
     );
   });
 
-  testWidgets('上滑收起顶 / 底两条浮层，下滑立刻切回；收放不改滚动几何', (WidgetTester tester) async {
-    // 刘海机型：顶部浮层收起时要滑进状态栏那条安全区里 —— 历史上它在那儿赖着不走
-    // （`SlideTransition` 是绘制期变换，`Stack` 认为没溢出、不装裁剪层），而测试的
-    // view padding 为 0 时越界即出屏被裁，第一版断言就没抓到。故按各自的裁剪窗判。
-    tester.view.padding = const FakeViewPadding(top: 132);
-    tester.view.viewPadding = const FakeViewPadding(top: 132);
-    addTearDown(tester.view.resetPadding);
-    addTearDown(tester.view.resetViewPadding);
-
+  testWidgets('上滑：元信息随正文 1:1 走、顶/底栏整条切出，滚回起点三条都回位', (
+    WidgetTester tester,
+  ) async {
     await _pumpList(tester);
     // 纯文本长邮件：HTML 正文在测试里没有平台视图、撑不出滚动，故用纯文本验证。
     await tester.tap(find.text('Claude'));
     await tester.pumpAndSettle();
 
-    final scrollView = find.byType(SingleChildScrollView).last;
-    final position = tester
-        .widget<SingleChildScrollView>(scrollView)
-        .controller!
-        .position;
-    final extentBefore = position.maxScrollExtent;
-    final recipientBefore = tester.getTopLeft(find.text('收件人：')).dy;
-    final backBefore = tester.getRect(find.byIcon(AppIcons.back));
-    final replyBefore = tester.getTopLeft(find.text('回复')).dy;
+    final topBar = find.byKey(const Key('detail-top-bar'));
+    final meta = find.byKey(const Key('detail-meta'));
+    final bottomBar = find.byKey(const Key('detail-bottom-bar'));
+    final screenH = tester.view.physicalSize.height / tester.view.devicePixelRatio;
 
-    // 上滑。用 `timedDrag` 慢速拖拽而非 `drag` 快速甩：SelectableText 与滚动视图
-    // 抢手势时，极高速的测试手势会被当成选择操作吞掉。
+    // 初始：顶栏贴屏幕顶（含状态栏那条）、元信息紧跟其后、底栏贴屏幕底。
+    expect(tester.getRect(topBar).top, closeTo(0, 0.5));
+    expect(tester.getRect(meta).top, closeTo(tester.getRect(topBar).bottom, 0.5));
+    expect(tester.getRect(bottomBar).bottom, closeTo(screenH, 0.5));
+    // 正文起始处的留白 == 顶栏 + 元信息，即正文正好接在元信息下面。
+    final bodyScroll = find.byType(SingleChildScrollView).last;
+    expect(
+      tester.widget<SingleChildScrollView>(bodyScroll).padding?.resolve(null).top,
+      closeTo(tester.getRect(meta).bottom, 0.5),
+    );
+
+    // 上滑正文（纯文本的 SingleChildScrollView）。
     await tester.timedDrag(
-      scrollView,
-      const Offset(0, -320),
+      bodyScroll,
+      const Offset(0, -400),
       const Duration(milliseconds: 300),
     );
     await tester.pumpAndSettle();
 
-    // 元信息与正文同在一条滚动条里 → 一起往上走。
-    expect(tester.getTopLeft(find.text('收件人：')).dy, lessThan(recipientBefore));
+    // 三条全部出画：顶栏 / 元信息移到屏幕上方，底栏移到屏幕下方。
+    expect(tester.getRect(topBar).bottom, lessThanOrEqualTo(0.5));
+    expect(tester.getRect(meta).bottom, lessThanOrEqualTo(0.5));
+    expect(tester.getRect(bottomBar).top, greaterThanOrEqualTo(screenH - 0.5));
 
-    // 两条浮层整体移出各自的裁剪窗 —— 看不见，也点不到（裁剪同时管住命中测试）。
-    final headerClip = tester.getRect(
-      find.byKey(const Key('detail-header-clip')),
-    );
-    expect(
-      tester.getRect(find.byIcon(AppIcons.back)).bottom,
-      lessThanOrEqualTo(headerClip.top + 0.5),
-    );
-    final actionClip = tester.getRect(
-      find.byKey(const Key('detail-actionbar-clip')),
-    );
-    expect(
-      tester.getTopLeft(find.text('回复')).dy,
-      greaterThanOrEqualTo(actionClip.bottom - 0.5),
-    );
-    // 裁剪层必须真在树上，否则挪出去的部分照画。
-    expect(
-      tester.renderObject(find.byKey(const Key('detail-header-clip'))),
-      isA<RenderClipRect>(),
-    );
-
-    // **收放只做绘制期平移**：滚动几何一格不动 —— 正文那块 WebView 不会因收放被
-    // 重排，也就没有「重排吐新偏移 → 又驱动收放」的正反馈（那正是历史上「全屏状态
-    // 来回跳动」的病根）。
-    expect(position.maxScrollExtent, extentBefore);
-
-    // 下滑一点点就立刻切回原位：`appRoute` 没有 iOS 侧滑返回，返回箭头不能一直藏着。
-    await tester.timedDrag(
-      scrollView,
-      const Offset(0, 60),
-      const Duration(milliseconds: 300),
-    );
+    // 滚回起点 → 元信息按 1:1 映射回位，顶 / 底栏整条切回来。
+    tester.widget<SingleChildScrollView>(bodyScroll).controller!.jumpTo(0);
     await tester.pumpAndSettle();
-    expect(tester.getRect(find.byIcon(AppIcons.back)), backBefore);
-    expect(tester.getTopLeft(find.text('回复')).dy, replyBefore);
+    expect(tester.getRect(topBar).top, closeTo(0, 0.5));
+    expect(tester.getRect(meta).top, closeTo(tester.getRect(topBar).bottom, 0.5));
+    expect(tester.getRect(bottomBar).bottom, closeTo(screenH, 0.5));
   });
 
-  testWidgets('内容装得下一屏：上滑也不收起两条浮层', (WidgetTester tester) async {
+  testWidgets('顶/底栏按滑动方向收放：小幅滑动不动，够 24 才整条切出，回滑 12 就召回', (
+    WidgetTester tester,
+  ) async {
+    await _pumpList(tester);
+    await tester.tap(find.text('Claude'));
+    await tester.pumpAndSettle();
+
+    final topBar = find.byKey(const Key('detail-top-bar'));
+    final meta = find.byKey(const Key('detail-meta'));
+    final bottomBar = find.byKey(const Key('detail-bottom-bar'));
+    final screenH = tester.view.physicalSize.height / tester.view.devicePixelRatio;
+    final topH = tester.getRect(topBar).height;
+    final controller = tester
+        .widget<SingleChildScrollView>(find.byType(SingleChildScrollView).last)
+        .controller!;
+
+    // 一滑动就切出是不对的（用户反馈「时机不对」）：不足 24 时两条栏一动不动，
+    // 只有元信息随正文 1:1 走 —— 它是内容的一部分。
+    controller.jumpTo(12);
+    await tester.pumpAndSettle();
+    expect(tester.getRect(topBar).top, closeTo(0, 0.5));
+    expect(tester.getRect(bottomBar).bottom, closeTo(screenH, 0.5));
+    expect(tester.getRect(meta).top, closeTo(topH - 12, 0.5));
+
+    // 累计上滑够 24 → 两条栏**整条**切出（中途不会停在半截）。
+    controller.jumpTo(30);
+    await tester.pumpAndSettle();
+    expect(tester.getRect(topBar).bottom, closeTo(0, 0.5));
+    expect(tester.getRect(bottomBar).top, closeTo(screenH, 0.5));
+
+    // 回滑不足 12（含越界回弹那点抖动）→ 保持收起，不来回弹。
+    controller.jumpTo(22);
+    await tester.pumpAndSettle();
+    expect(tester.getRect(topBar).bottom, closeTo(0, 0.5));
+
+    // 回滑够 12 → 立刻整条切回来，**不必先滚到顶部**（读到中段也能点底部操作栏）。
+    controller.jumpTo(15);
+    await tester.pumpAndSettle();
+    expect(tester.getRect(topBar).top, closeTo(0, 0.5));
+    expect(tester.getRect(bottomBar).bottom, closeTo(screenH, 0.5));
+    // 元信息仍按正文偏移摆着（它不参与方向判定）。
+    expect(tester.getRect(meta).top, closeTo(topH - 15, 0.5));
+  });
+
+  testWidgets('内容装得下一屏：上滑也不动浮层', (WidgetTester tester) async {
     final api = FakeMailApi(
       fullMessages: {
         ...kFakeFullMessages,
-        // 短正文、无附件 —— 一屏装得下，可滚距离不足 200，收了也没多少可看。
+        // 短正文、无附件 —— 一屏装得下，正文无法滚动 → 浮层不动。
         'm1': fakeGraphMessage(
           id: 'm1',
           conversationId: 'c1',
@@ -319,9 +333,7 @@ void main() {
     await tester.tap(find.text('Claude'));
     await tester.pumpAndSettle();
 
-    final backBefore = tester.getRect(find.byIcon(AppIcons.back));
-    final replyBefore = tester.getTopLeft(find.text('回复')).dy;
-
+    final topBar = find.byKey(const Key('detail-top-bar'));
     await tester.timedDrag(
       find.byType(SingleChildScrollView).last,
       const Offset(0, -320),
@@ -329,11 +341,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(tester.getRect(find.byIcon(AppIcons.back)), backBefore);
-    expect(tester.getTopLeft(find.text('回复')).dy, replyBefore);
+    // 正文内容很短，滚不动 → 顶栏仍贴屏幕顶。
+    expect(tester.getRect(topBar).top, closeTo(0, 0.5));
   });
 
-  testWidgets('正文懒取中：转圈落在内容区垂直正中', (WidgetTester tester) async {
+  testWidgets('正文懒取中：转圈浮在屏幕正中', (WidgetTester tester) async {
     final api = FakeMailApi()..getMessageHangs = true;
     await _pumpList(tester, api);
     await tester.tap(find.text('Claude'));
@@ -341,10 +353,9 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    // 内容区 = 返回栏与底部操作栏之间那块（滚动视图铺满它）。
-    final content = tester.getRect(find.byType(SingleChildScrollView).last);
+    // 转圈在 Stack 的 Positioned.fill 里 → 浮在屏幕正中。
     final spinner = tester.getRect(find.byType(CupertinoActivityIndicator));
-    // 原来转圈紧跟在元信息下面（贴着收件人那几行、偏上一大截），现在浮在正中。
-    expect(spinner.center.dy, closeTo(content.center.dy, 0.5));
+    final screenSize = tester.view.physicalSize / tester.view.devicePixelRatio;
+    expect(spinner.center.dy, closeTo(screenSize.height / 2, 1));
   });
 }

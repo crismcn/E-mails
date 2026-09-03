@@ -1,3 +1,20 @@
+# 邮件详情正文改「正文自滚」+ 全屏化（根治展示不全）[OK]
+
+- 量高模型真机不可靠：用户多轮反馈「展示不全 / 滑不到底」，冷启动第一封邮件必现、干等不长全、
+  返回重进才全。修了三版量高补丁（catch→continue、轮询拉长、跟图片 complete）都没根治 → 结论：
+  「整页一条滚动条 + JS 量高给 WebView 撑内容高的盒子」这条链路在平台视图上不可靠（尺寸动态
+  变化时纹理/合成跟不上）。
+- 改：正文 WebView **有界视口自滚 + 双指缩放**（`EagerGestureRecognizer` 独占手势），不再量高。
+  - `Column` 布局：顶（返回栏 + 元信息 + 附件）/ 中 `Expanded` 正文 / 底操作栏，顶底两条
+    `SizeTransition` 收起，由正文内部滚动位置驱动（HTML 用 `setOnScrollPositionChange`，
+    纯文本用 `ScrollController`）。
+  - 文档去掉量高脚本 / JS 通道 / nonce，CSP `script-src 'none'`（整份文档无脚本，更安全）。
+  - 收放回弹抖动用「累计位移 + ±16px 死区」吞掉（拖拽结束的物理回弹会误判成下滑把栏弹回来）。
+  - **全屏化**：去外层 `SafeArea`，顶/底栏背景延伸到状态栏 / 底部安全区，任何时刻不露背景带。
+- 待真机确认：① 冷启动第一封邮件不再截断、能一路滑到底；② 收起动画期间 WebView 视口变化
+  是否偶发抖动（有 `isAnimating` 闸；若仍抖，收放改回 SlideTransition 浮层 / 动画调短）；
+  ③ 状态栏/底部安全区无遮挡；④ 附件展开多图时顶区自己滚不挤爆正文。iOS 首次跑需 `pod install`。
+
 # 首页交互调整 [OK]
 
 - 页面上滑的时候 汇总、搜索框、列表同时上滑；汇总 上滑覆盖掉标题 右侧操作ICON保留不动；覆盖掉标题后 汇总、搜索框 固定 不在滑动 列表继续上滑加载
@@ -26,7 +43,20 @@
 
 - 检测接口需要获取用户的信息并与帐号一起落盘安全存储
 
-# 兑换clientId写权限 [NO]
+# 消息详情页面展示不全 [OK]
+
+- 用量高脚本测量的正文盒子高度，首次进入偶发「展示不全，返回再进又全了」，根因：
+  - 宿主侧 `_measureFromHost` 单次 `runJavaScriptReturningResult` 失败就 `return` 掐死整条链路，
+    冷启动（首次进 App）图片慢 + Android 加载窗口偶发抛异常 → 后面的量高轮次都不跑，
+    高度停在低值。
+  - JS 侧轮询只跑 10 拍 3 秒，冷启动到不了。
+  - 宿主侧补救只在 `onPageFinished` 里跑，`onPageFinished` 被慢资源吊着没来就没人量。
+- 修法（又一轮，用户实测仍缺）：症状「带图的邮件、正文底部直接没有、干等不会长全、
+  只有返回重进才好」→ 确认是「图片加载后的完整高度从未报回」。前一轮的 catch→continue
+  + 固定轮次（8s/7.2s）没用，因为固定圈数在图片到齐前就跑完了。改：JS 轮询**一直跑到
+  `document.images` 全部 `complete` 才停**（60 拍 × 300ms = 18s 死兜底），宿主侧兜底同步
+  拉 20 秒。详见 CLAUDE.MD §5.5 量高段。待真机重验；若仍缺，说明量高模型在真机不可靠，
+  需转「正文 WebView 有界视口自滚 + 元信息并进同一文档」架构（结构性免疫）。
 
 # 首页调整 [OK]
 
@@ -252,7 +282,7 @@
   （WebView 视口 = 一屏、自己滚、`EagerGestureRecognizer` 独占手势、原生双指缩放）、
   可收起底部操作栏。顶 / 底两块回到 `SizeTransition` 压高度 —— 正文独立滚动，
   压顶栏只让视口变高、不改滚动偏移，跳位在结构上不可能发生，`Stack` + `SlideTransition`
-  + `ClipRect` + 高度测量那一整套删掉。
+  - `ClipRect` + 高度测量那一整套删掉。
 - 顺带清掉一大片：量高脚本 / `MailMetrics` JS 通道 / `mailHtmlNonce` / `layoutScale`
   / `_MultiTouchGestureRecognizer` 全删，**CSP `script-src` 从 `'nonce-…'` 收紧回 `'none'`**
   （宿主不必知道内容多高，就不需要在敌意文档里跑任何脚本了）。
@@ -274,7 +304,7 @@
   正文 WebView **按页内量到的渲染高度占位、自己不滚**；**双指缩放只在这个高度内做**
   （缩放不改盒子高度 —— 那正是「一放大就闪退」的旧账）。
 - **变形 / 卡死这次靠 Hybrid Composition 治**：`AndroidWebViewWidgetCreationParams(
-  displayWithHybridComposition: true)`，经 `WebViewWidget.fromPlatformCreationParams` 传。
+displayWithHybridComposition: true)`，经 `WebViewWidget.fromPlatformCreationParams` 传。
   默认的纹理合成（`initSurfaceAndroidView`）按控件尺寸开纹理、受 `GL_MAX_TEXTURE_SIZE`
   约束，长邮件必越界 → clamp 后拉伸 = 变形、每帧重绘巨型表面 = 卡死。插件注释自己写着
   HC「有性能代价，但没有渲染到 SurfaceTexture 的尺寸限制」。
@@ -591,3 +621,100 @@
   图标定位，不受影响。
 - 待真机确认：① 胶囊菜单视觉与首页菜单一致（底色 / 阴影 / 圆角 / 行距）；② 表单整体更轻、
   收件人胶囊更紧凑不贴字。
+
+# 新建邮件：浮层样式统一 + 表单行去边框 [OK]
+
+又一轮视觉调整（用户反馈）。
+
+- **输入提示卡 / 重要性下拉 → 胶囊菜单同一套样式**：收件人 / 抄送 / 密送输入时弹出的
+  `_SuggestionCard`（背景 `palette.card` + `elevation: 8` + 圆角 20 + 主行 17 号）与
+  重要性下拉 `PopupMenuButton`（背景 `palette.card`）统一为胶囊菜单那套：底色
+  `palette.background` + `surfaceTintColor` 同底 + `elevation: 20` + `shadowColor:
+0x4B000000` + 圆角 12；提示卡主行字号 17 → 15（仍靠 w600 区分主次，次行本就是 15）。
+  三个浮层（胶囊菜单 / 提示卡 / 重要性）观感统一。
+- **表单行去边框**：`_FieldRow` 移除底部 1px 分隔线（`Border(bottom: divider)`），各行间
+  留白分隔。附件条 `_buildAttachments` 与正文之间那条线**保留**（它分隔附件区与正文，不是
+  表单项边框；用户要再去掉说一声）。
+- 验证：`flutter analyze` 零问题；`flutter test` 全量 153 例通过。测试不断言浮层样式 /
+  行边框，无需改动。
+- 待真机确认：① 提示卡 / 重要性下拉与胶囊菜单背景阴影圆角一致；② 表单去线后整页观感。
+
+# 新建邮件：重要性下拉选中态去方形深底 [OK]
+
+用户反馈「选中选项后是方形的底色」——根因在 SDK：[popup_menu.dart](file) 的
+`_PopupMenu.build` 对 `initialValue` 代表的那一项整项包 `ColoredBox(color: Theme.highlightColor)`
+（默认近 40% 黑），菜单 Material 默认 `clipBehavior: Clip.none` 不裁剪 → 选中项一块方形深底，
+圆角失效。我们恰好在重要性下拉传了 `initialValue: _importance`，每次打开都能看到。
+
+- 修法：**去掉 `initialValue`**（不再触发 SDK 的方形 ColoredBox），选中态在 `itemBuilder`
+  里自己画——选中的值包 `Container(decoration: primary@10% + 圆角 8, padding: 12/6)`，淡色圆角块。
+- 影响面：只有重要性下拉有选中态残留（胶囊菜单 / 提示卡点选即关闭、无 `initialValue`），
+  故只改这一处。按压反馈（InkWell 方形高亮）用户没提，未动。
+- 验证：`flutter analyze` 零问题；`flutter test` 153 例全绿（无测试触碰重要性下拉）。
+- 待真机确认：选中项为淡蓝圆角块、不再方形深底。
+
+# 新建邮件：菜单项点按去方形按压底色 [OK]
+
+用户反馈「手指点击的时候依旧还有一个底色」——`PopupMenuItem` 内部 InkWell 的按压高亮
+取 `Theme.of(context).highlightColor`（默认近 40% 黑），SDK 不暴露参数、菜单又在独立
+route 里包不住 Theme 覆盖，点按选项就浮一块方形深底。
+
+- 修法：自绘 `_FlatMenuEntry<T>`（`PopupMenuEntry` 子类）——复刻 `PopupMenuItem` 布局
+  （`ConstrainedBox(minHeight) + Padding + Align(centerStart)`），迭代两轮：第一轮
+  InkWell 反馈色全透明；用户实测重要性下拉「点击仍有底色」，第二轮干脆用
+  `GestureDetector`（彻底脱离 Material Ink 机制，`focusColor` / `hoverColor` 等其它
+  Material 态也碰不到），`onTap` 里 `Navigator.pop` 返回 value。
+  胶囊菜单（`_chipMenuItem`，高 52 / 边距 20）与重要性下拉（高 48 / 边距 20）都换用它。
+  代价：失去 PopupMenuItem 的键盘焦点导航（移动端菜单短、可接受，已记录）。
+- 提示卡 `_SuggestionCard` 的 InkWell 被外层 Material（圆角 12 + `Clip.antiAlias`）裁剪成
+  圆角淡色反馈，非方形，用户未提，未动。
+- 验证：`flutter analyze` 零问题；`flutter test` 153 例全绿。
+- 待真机确认：点按胶囊菜单 / 重要性下拉选项不再浮方形底色，选中态仍是淡蓝圆角块。
+
+# 新建邮件：收件人输入一个联系人后「后方还有空间光标却换行」+ 重要性下拉点按底色 [OK]
+
+用户两项反馈一起处理：
+
+**① 收件人行尾余量阈值 72 → 40**（`_ChipsInput` 的 `_kMinInputWidth`）：真机上地址稍长
+（行尾还剩 40~70px）就被 `free < 72` 判「余量不足」而把输入框整行推到下一行 —— 用户眼里
+「还有空间光标却换行了」。降到 40（≈5 字符，仍够看清正在敲的字）。配套测试
+「收件人光标紧跟胶囊」从 1440 物理宽改 1260（÷dpr3 = 逻辑 420）：1440 下两枚胶囊后余量
+仍上百，阈值 40 不再触发换行、断言失准；1260 正好落在「单枚同排、两枚换行」的区间
+（测试字体是 fontSize 见方，screenWidth 是物理像素 ÷3 才是逻辑宽，踩过坑）。
+
+- 代价：行尾余量 40~72px 时输入框更窄、框内横向滚动稍多，换来「有空间就紧跟胶囊」。
+
+**② 重要性下拉点按底色 → `_FlatMenuEntry` 改用 `GestureDetector`**：上一轮 `_FlatMenuEntry`
+用「InkWell + 三反馈色透明」，用户实测重要性下拉点按仍浮底色 —— InkWell 的反馈还受
+`focusColor` / `hoverColor` 等其它 Material 态影响，且必须落在 Material Ink 层上。
+干脆弃用 InkWell，`GestureDetector` 只管手势、什么都不画，任何点按 / 水波 / 悬停都不可能
+再出现。胶囊菜单同用此组件，一并生效。
+
+- 验证：`flutter analyze` 零问题；`flutter test` 153 例全绿。
+- 待真机确认：① 输完一个联系人，只要行尾还有约 5 个字符以上的余量，光标就跟在胶囊后面
+  同一行；② 重要性下拉点按任意选项全程无底色。
+
+# 详情页：滑动「时不时」只有 HTML 滚、整体页面不移动 [OK]
+
+用户反馈「有时进详情页滑邮件内容，只有 html 往上滑动，整体页面没有上移」「时不时会失灵」。
+
+- 根因：单指归谁听的是页内脚本那句 `内容高度 > visualViewport.height + 2px` 的布尔量。
+  但图片陆续加载、宿主盒子高度还没跟上的窗口里（以及测量舍入差），它会**偶尔误判为
+  「能内滚」** → 单指被 WebView 抢走，外层滚动视图收不到手势 → 整页滑不动，
+  表现为「只有 html 滚、页面不滚」，且时不时。
+- 修法：页内脚本**只报高度**（删掉 visualViewport 监听与 canScroll 计算）；
+  「能否内滚」改由宿主 `MailHtmlView._applyMetrics` 按**「量到高度 > 纹理上限」**判
+  （`_canScrollInside = scaled > cap + 1`）—— 普通邮件恒不内滚、单指恒归外层整页滚；
+  只有内容真被纹理上限截断（超长邮件，下半截靠 WebView 内滚读全）才认领单指。
+  - 取舍：放大后的单指平移让给双指（识别器对第二根手指无条件认领）；被截断的
+    超长邮件仍是「正文内滚、元信息不动」，但那是硬约束下的必要分支。
+- 改动：`lib/data/mail_html_document.dart`（\_heightProbe 只报高度）、
+  `lib/widgets/mail_html_view.dart`（\_applyMetrics 宿主判定）、
+  `test/mail_html_document_test.dart`（断言页内不再含 visualViewport）、CLAUDE.MD §5.5。
+- 验证：`flutter analyze` 零问题；`flutter test` 153 例全绿。
+- 待真机确认：① 进详情页、正文图片加载过程中去滑，页面也应整页一起滚（不再时不时
+  卡住）；② 超长邮件（内容超约 2700 逻辑 px）仍能读到被夹住的下半截。
+
+# 邮件详情页面 【NO】
+
+邮件详情页面全屏效果 修改为 包括状态栏 和 底部 安全区域。现在滑动内容时 状态栏和底部安全区域还是有边框遮挡

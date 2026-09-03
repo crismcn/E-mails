@@ -43,7 +43,7 @@
 | 首页 / 账号总览 | `lib/pages/home_page.dart` | 三统计卡 + 账号列表；吸顶头部（标题上滑被汇总覆盖后固定）；长按进多选，底部操作栏（健康检测 / 删除 / 全选）；右上角「…」菜单 → 导入 / 设置 |
 | 导入邮箱 | `lib/pages/import_page.dart` | CSV 文件导入 + 文本粘贴导入；格式说明卡；底部「确认导入」落安全存储 |
 | 邮件列表 | `lib/pages/mail_list_page.dart` | 某账号的 Graph 真实收件箱；下拉刷新 / 上滑翻页（`$skip`）；左滑归档 / 已读 / 删除；点击进详情并自动标已读；首屏转圈浮在整页正中（见 §4.7） |
-| 邮件详情 | `lib/pages/message_detail_page.dart` | 单封邮件；懒取全文与正文渲染**共用一个**转圈，浮在内容区正中（见 §4.7）；**整页一条滚动条**——滚动视图恒定铺满内容区（收件人 / 主题 / 日期 / 附件 / 正文一起上滑，HTML 交给按内容高度占位的 WebView，见 §5.5），返回栏与底部操作栏是浮在它上面的两条**绝对定位浮层**，上滑收起 / 下滑立刻切回（只做绘制期平移，滚动几何恒定，见 §5.5）；附件条（收起显示「N 个附件 + 总大小」，展开出图片预览与文件行，点击交给系统应用打开、打不开转下载） |
+| 邮件详情 | `lib/pages/message_detail_page.dart` | 单封邮件；懒取全文与正文渲染**共用一个**转圈，浮在屏幕正中（见 §4.7）；**正文恒定铺满真实全屏、自己滚动 + 双指缩放**（`Stack` 最底层 `Positioned.fill`，永不移动 / 永不改尺寸），顶栏（状态栏底色 + 返回 + 发件人 + 星标）、元信息（收件人 / 主题 / 日期 / 附件摘要）、底部操作栏是浮在它上面的三层，元信息随正文 **1:1 跟手**、顶 / 底栏按**滑动方向整条切入切出**（见 §5.5）；正文起头留出「顶栏 + 元信息」的空白（HTML 走文档 CSS 内边距，纯文本走 `SingleChildScrollView.padding`），于是「整体上移」= 正文自己往上滚这段空白；**全屏化**（无外层 `SafeArea`，浮层背景延伸到状态栏 / 底部安全区）；附件条（收起显示「N 个附件 + 总大小」，展开出图片预览与文件行，点击交给系统应用打开、打不开转下载） |
 | 新建邮件 | `lib/pages/compose_page.dart` | 顶栏（返回 / 附件 / 发送）+ 表单（收件人 / 抄送 / 密送 / 发件人 / 重要性 / 主题）+ 附件条 + 正文 + 底部两条工具栏（排版栏 / 撤销·重做·Aa·图片）；**表单与正文同在一条滚动条里**（`CustomScrollView`，正文走 `SliverFillRemaining(hasScrollBody:false)`）；收件人交互见 §5.6，正文的选区级排版见 §5.7 |
 | 设置 | `lib/pages/settings_page.dart` | 主题（跟随系统 / 暗黑 / 亮白）+ 语言（中文 / English），分段控件切换，即时持久化 |
 
@@ -122,11 +122,7 @@
 ### 4.7 加载转圈的位置
 - 一屏之内的等待，转圈**落在可见区域垂直正中**，不要排在已有内容后面、也不要只按
   「剩下那块」居中。两处都踩过：
-  - 邮件详情页的懒取转圈原来跟在元信息下面，看着像挂在页面上三分之一处；现在用
-    `Stack(fit: StackFit.expand)` + `Positioned.fill` + `Center` 浮在整块内容区正中。
-    `StackFit.expand` 是必需的 —— 默认 loose 会让里面的滚动视图按内容缩，短邮件时
-    下半截点不着、滑不动。返回栏与底部操作栏是浮层且高度相当，故「整块内容区正中」
-    与「两条栏之间那块的正中」相差两三像素，看不出来。
+  - 邮件详情页的懒取转圈在 `Stack` + `Positioned.fill` 里浮在屏幕正中（`Stack` 铺满 `Scaffold` 无 `SafeArea` 的整块区域，正中 ≈ 内容区正中）。
   - 邮件列表的首屏转圈原来在**搜索框下面那块列表区**里居中 —— 上面压着标题栏 + 搜索框
     近 120、下面没有对称的底栏抵消，实测落在 452 而屏幕正中是 390，看着明显偏下。
     改成整页级浮层（`SafeArea` 下的 `Stack` + `Positioned.fill` + `Center`），列表区那支
@@ -136,6 +132,8 @@
   两段，曾各画一个（页面画懒取那个、`MailHtmlView` 在遮罩里画渲染那个），交接处有一两帧
   谁都没画 —— Android 上平台视图首帧还要几十毫秒，看着就是**闪一下**。现在整个等待只有
   页面那一个转圈，正文遮罩只负责底色，起落靠 `MailHtmlView.onCoverChanged` 通知（详见 §5.5）。
+  **附件列表也被并进这一段等待**：附件摘要行属于元信息，元信息高度决定正文文档的上下留白，
+  分两次落地就会「建完正文又按新留白重载一次」（详见 §5.5）。
 - **测试里不能对着转圈 `pumpAndSettle`**（永不收敛，同 §4.6）：`pump()` 走完路由转场即断言。
   同理，转圈淡出后必须整层**移出树**（`isDismissed → SizedBox.shrink()`），留在 `opacity:0`
   下面会一直空转、每帧重绘，`pumpAndSettle` 也永不收敛。
@@ -179,80 +177,87 @@ UI 页面 (pages / widgets)
 HTML 正文交给**系统 WebView**（`webview_flutter`，iOS WKWebView / Android WebView）。曾用
 `flutter_widget_from_html_core` 画成原生 widget，排版还原度不够（表格、定位、webfont），已换掉。
 
+- **正文恒定铺满真实全屏，自己滚动 + 双指缩放**：详情页是 `Stack` —— 最底层
+  `Positioned.fill` 是正文（含状态栏与底部安全区），**从头到尾不移动、不改尺寸**；
+  顶栏 / 元信息 / 底部操作栏是浮在它上面的三层。
+- **「整体上移」= 正文自己往上滚一段留白**：正文起头处留出 `顶栏高 + 元信息高` 的空白，
+  收尾留出底栏高。于是浮层随滚动 1:1 上移、正文起始位置抵达 y=0 时三条正好出画 ——
+  **WebView 一次都不用动**，观感与「WebView 上移后固定」完全一致。
+  - **为什么不真的移 WebView**：平台视图自己就是滚动面，移它 = 内容位移被算两遍
+    （正文滚 d + 盒子移 d = 视觉 2d，跟手感全乱）；要压住就得反向 `scrollTo`，跟平台惯性打架。
+  - **留白必须是我们自己的空 div**（`#mail-pad-top` / `#mail-pad-bottom`，按 **id 选择器 +
+    `!important`** 定高），**不能写成 `body` 的 `padding`**：邮件普遍自带
+    `<body style="margin:0;padding:0">`（嵌套 body 标签被解析器丢弃、属性并到文档 body 上），
+    内联样式压过样式表 → 留白当场归零。真机复现过：正文顶到屏幕最上、元信息和正文糊成一团。
+    换成 id 选择器后邮件那边除非猜中同一个 id 否则压不动（`div{}` / `*{}` 特异度都更低）。
+  - 占位高度**除以 `layoutScale`** 再写进 CSS：宽版邮件在 600 的虚拟视口里排完被整体缩放，
+    直接写逻辑像素会缩水成 `留白 × layoutScale`（`mail_html_document_test.dart` 有断言）。
+  - 占位在 `#mail-root` **之外** —— 暗色下不参与反色，露出的是 `html` 那层 App 底色。
+  - 纯文本正文没有这套：留白直接写 `SingleChildScrollView.padding`。
+- **为什么不再量正文高度**：旧形态「整页一条滚动条 + JS 量高给 WebView 撑内容高的盒子」在
+  真机上反复截断（用户多轮反馈「展示不全 / 滑不到底」，冷启动第一封必现）。根因是量高 → 动态改
+  WebView 盒子高度这条链路不可靠（平台视图尺寸动态变化时纹理/合成跟不上）。现在 WebView 的
+  尺寸恒等于屏幕、连收放都不改它，**截断在结构上不可能发生**。连带删掉整套路：量高脚本 /
+  JS 通道 / nonce / `_height` / 纹理上限夹高 / 单指归属判定。
 - **包装文档是纯函数**：`lib/data/mail_html_document.dart` 的 `buildMailHtmlDocument`
-  把正文包成一整份 HTML（视口 + CSP + 注入样式），可单测；
-  `lib/widgets/mail_html_view.dart` 只管 WebView 生命周期。
+  把正文包成一整份 HTML（视口 + CSP + 注入样式 + 上下留白），可单测；
+  `lib/widgets/mail_html_view.dart` 只管 WebView 生命周期。文档里**没有任何脚本**。
 - **正文是发件人可控的敌意输入**，安全姿态写死在那份文档里：CSP `default-src 'none'`，只放开
-  图片 / 内联样式 / 字体，**脚本只放行带随机 nonce 的那一段**（量高用，`Random.secure` 每份文档
-  重生成）；邮件自带 `<script>`、内联 `onclick`、`<iframe>`、表单提交、`<base>` 全被挡；
-  `<script>` 整块另外物理删一遍。链接一律不在 WebView 内导航，只把 `http/https/mailto/tel`
-  交给外部浏览器（`isSafeMailLink`）。
+  图片 / 内联样式 / 字体，**`script-src 'none'`**（没有量高脚本可放行了）；邮件自带 `<script>`、
+  内联 `onclick`、`<iframe>`、表单提交、`<base>` 全被挡；`<script>` 整块另外物理删一遍。
+  链接一律不在 WebView 内导航，只把 `http/https/mailto/tel` 交给外部浏览器（`isSafeMailLink`）。
   **远程图片照旧加载**（跟踪像素照旧能打点），要拦得做成「点按钮才显示图片」。
-- **整页一条滚动条**：`Stack` —— 一条 `SingleChildScrollView` 以 `Positioned.fill` **恒定**
-  铺满内容区（收件人 / 主题 / 日期 / 附件 / 正文都在里面，一起上滑），返回栏与底部操作栏是
-  浮在它上面的两条绝对定位浮层，靠滚动视图**恒定**的上下内边距让位（内容滑到浮层背后，
-  浮层不透明）。正文 WebView **按页内量到的渲染高度占位、自己不滚**。
-- **盒子高度 = `min(页内量到的 CSS 高度 × layoutScale, 纹理安全边 ÷ dpr)`**，与双指缩放彻底解耦。
-  - `layoutScale` 是排版缩放比，只跟这封邮件的声明宽度有关。曾按 `× visualViewport.scale`
-    重新定高想让放大后的下半截靠页面滚动看完，缩放比能到 10、盒子被撑成几万逻辑像素 →
-    **一放大就闪退**。
-  - **纹理安全边（`_kMaxTexturePhysical = 8192` 物理像素）是硬约束**：Android 平台视图走纹理合成
-    （`initSurfaceAndroidView`），WebView 被画进一张**按控件尺寸开的纹理**，受
-    `GL_MAX_TEXTURE_SIZE` 约束（常见 4096–16384）。越界 → 纹理被 clamp 再拉伸铺满 = **画面变形**；
-    缩放时每帧重绘巨型表面 = **整机卡死**。运行时拿不到真实上限，只能取个几乎所有机型都满足的值。
-  - **开 Hybrid Composition 是试过又退回的路**：`displayWithHybridComposition: true` 确实绕开了
-    纹理尺寸限制（插件注释写着「有性能代价，但没有 SurfaceTexture 的尺寸限制」），但真机上
-    **滚动明显卡顿** —— 它让叠在平台视图上的内容走 `FlutterImageView` 覆盖层。故改回默认合成 +
-    上面那道高度上限。
-- **单指拖动归谁，看「WebView 内部现在还能不能纵向滚」**（页内脚本回报的布尔量，
-  判据是 `内容高度 > visualViewport.height`）：
-  - 能内滚（**双指放大后**可视视口变小 / 邮件超过高度上限被夹）→ 单指归 WebView，在里面滚，
-    够得着被放大遮住的内容；
-  - 不能内滚（常态：盒子正好装下全文）→ 单指归外层滚动视图，整页一起上滑。
-  - 双指**永远**归 WebView（缩放 + 平移）；单指点击靠竞技场清算落到平台视图，链接照样点得动。
-  - 实现是自写的 `_MultiTouchGestureRecognizer`（手指落下时现问一次那个布尔量）。`Set<Factory>`
-    在 State 里只建一份 —— 每帧换新的会让平台视图反复重挂。
-  - **那个布尔量刻意不进 `setState`**：双指平移时它频繁翻转，只被识别器读、不参与绘制；
-    重建界面会把 WebView 一起重排。这也是「监听 `visualViewport` 是安全的」的前提 ——
-    历史上炸的是「按缩放比重新定高」，不是监听本身。
-  - **已知取舍**：超过高度上限的长邮件，单指滑正文时滚的是 WebView 内部（元信息不跟着走），
-    要滑走元信息得在元信息那块拖。绝大多数邮件在上限内，不会走到这条分支。
-- **顶 / 底栏上滑收起、下滑切回**，两条都是浮层：`Positioned` + `ClipRect` + `SlideTransition`。
-  **收放只做绘制期平移** —— 不改滚动视图的尺寸、不改它那份上下内边距，`maxScrollExtent`
-  全程恒定（用例里有断言）。**这条约束就是全部的关键**：历史上收起做坏过三轮（压高度
-  `SizeTransition`、浮层平移但由正文滚动位置驱动、正文独立滚动时压高度），病根都是同一条 ——
-  **收放改了正文区尺寸或滚动几何 → 正文是 WebView，一改尺寸就重排 → 重排又吐出新的滚动偏移
-  去驱动收放**，正反馈表现为「全屏状态来回跳动」，曾按用户要求把收放整个取消掉。现在收放
-  一格布局都不碰，那条回路在结构上不存在。
-  - 驱动是**页面这条 Flutter 滚动条**（`ScrollController` + `userScrollDirection`），不是
-    WebView 的滚动回报。滚动回调里**只驱动 `AnimationController`、绝不 `setState`** ——
-    重建会把正文那块 WebView 一起重排。
-  - 阈值：贴顶 60px 内恒展开；上滑越过 80px 才收；可滚距离 < 200px 不收（内容本来就快装得下）。
-    **下滑立刻切回**（不是等快到顶部才回来）—— `appRoute` 没有 iOS 侧滑返回，返回箭头藏着
-    就退不出这一页。
-  - **`ClipRect` 是必需的**：`SlideTransition` 是绘制期变换，浮层的**布局**矩形始终在 `Stack`
-    范围内 → `RenderStack._hasVisualOverflow == false` → 不装裁剪层 → 挪出去的部分照画。
-    真机上表现为「顶栏没隐藏」（滑进状态栏那条安全区里赖着不走）；而测试的 view padding 为 0
-    时越界即出屏被裁、抓不到，故用例用 `FakeViewPadding` 模拟刘海机型，并按各自的裁剪窗断言
-    「浮层已整体移出窗外」。裁剪同时管住命中测试：藏起来的浮层点不到。
-  - 内边距用两条浮层的**实测高度**（`GlobalKey` + 帧后量一次校正，值没变就不 `setState`，
-    免得量→重建→再量成环）：写死会因平台字体 / 系统文字缩放差几像素，内容正好露在浮层
-    边缘那一线。两条浮层各自自带不透明底色（它们压在正文上）。
-  - **已知取舍**：正文放大后（或超高被夹时）单指归 WebView 内部滚动，那会儿外层滚动条不动
-    → 两条栏不收放。绝大多数邮件不会走到这条分支。
-- **量高**：页内脚本取 `#mail-root` / `body` / `documentElement` 三种量法的**最大值**
-  （邮件可能写死 body 高度、可能整封浮动、可能被 `overflow` 裁掉，少量一种就截断），
-  `ResizeObserver` + `visualViewport` 事件 + 10 拍轮询跟进；同一条消息里带上「能否内部滚动」。
-  宿主侧 `onPageFinished` 后再隔几拍调页内的 `window.mailMetrics()` 兜底（两条路径同一套量法）。
-  高度**只涨不缩**，免得来回抖。
-  仍用 `!important` 压掉邮件写给 `html/body` 的 `height:100%` / `overflow:hidden`
-  （那是给桌面客户端整页布局用的，照办会把正文压成一屏高）。
-- **滚动条**：WebView 的原生滚动条一律关掉（`setVerticalScrollBarEnabled(false)` / 横向同理，
-  两个平台都支持，调用前问一下 `supportsSetScrollBarsEnabled()`）—— 盒子等于内容高度时本不该
-  出现，但**放大之后 WebView 内部就有可滚距离了**，那两条会冒出来。邮件自带的内层滚动容器另由
-  文档里的 `::-webkit-scrollbar{width:0;height:0}` 关（主视口那条是原生绘制，CSS 管不到）。
+- **手势**：`WebViewWidget` 挂 `EagerGestureRecognizer` —— 正文独占全部 pan + pinch，
+  它自己就是唯一滚动面。三条浮层压在它上面，靠命中测试分流：
+  - 顶栏 / 底栏 / 展开的附件面板外层是 `ColoredBox`（`HitTestBehavior.opaque`），
+    `Stack` 的命中测试到它就停，WebView 的 eager 识别器进不了竞技场 —— 按钮点得动。
+  - 元信息的**文字部分包 `IgnorePointer`**：让开命中测试，在那片按下也能滚正文
+    （否则顶上一大条按下去毫无反应）。附件摘要行要点，故留在外面。
+  - `Transform.translate` 的命中区随位移一起走，出画后不会留下隐形挡板。
+- **两类浮层，收放时机刻意不同**（输入都是正文滚动偏移，但一个跟手、一个按方向）：
+  - HTML 走 `WebViewController.setOnScrollPositionChange`；纯文本走自带的
+    `SingleChildScrollView` + `ScrollController`。两条路汇到页面同一个 `_onBodyScroll`。
+  - **坑：两个平台回报的单位不同，而且都不是 CSS 像素**（插件源码为证，`MailHtmlView`
+    的 `_scrollUnit`）：Android 转手的是 `View.getScrollY()` = **设备像素**（要除以
+    `devicePixelRatio`），iOS 是 `scrollView.contentOffset.y` = **point**（已是逻辑像素）。
+    两者都在「视图空间」、本就含页面缩放，**绝不能再乘 `layoutScale`** —— 曾经乘过，
+    Android 上偏移被高估约 `dpr / layoutScale` ≈ 3 倍，浮层滑一小段就跑完（emulator 实测
+    手指走 200 逻辑像素、回报 384，按老公式算成 230）。
+  - **元信息是「内容级」，随正文 1:1 跟手**：`dy = -min(y, 顶栏+元信息)`，负偏移（越界回弹）
+    夹成 0。它的下边缘恒等于正文那段留白的末端（两者都是 `顶栏+元信息-y`），所以任何时刻都压
+    不到正文文字 —— 这也正是它**不能**做成整条动画的原因：一脱钩就会盖在正文上。
+  - **顶栏 / 底栏是「chrome 级」，按滑动方向整条切入切出**（220ms 缓动，`_barsCtrl`）：
+    只有「全在 / 全出」两态，**中途不停在半截** —— 半截标题栏与 OS 状态栏文字叠在一起最难看。
+    上滑净距离够 `_kBarsHideSlop = 24` 收起、回滑够 `_kBarsShowSlop = 12` 展开（**刻意不对称**：
+    收起要多一点「确实想往下读」的意图，展开要立刻叫得回来），`y ≤ _kBarsPinTop = 4` 一律全在。
+    好处是读到邮件中段回滑一点就能点回复 / 删除，不必先滚回顶部。
+    **曾经这两条也按 1:1 跟手做**（顶栏 `dy = -min(y, 顶栏)`），用户反馈「不是一开始滑动就切入
+    切出、时机不对」—— 顶栏连状态栏才 60~80 高，稍一滑动就被剪掉一半。
+  - **方向判定的锚点记「当前方向的极值」，不是「上一次的 y」**：展开态一路记最小 y、收起态记
+    最大 y，于是 slop 是真的「净回滑了这么多」。记上一次的 y 会被逐帧小增量把 slop 磨成 0、
+    回弹当场翻转 —— 老实现（「上次位置比方向 + `±16` 累计阈值」）就是这么抖的：刚收起又被弹
+    回来（探针实测复现过）。另一道闸仍需要：`MailHtmlView` 外套 `Listener` 数手指，≥2 根
+    （缩放）不回报滚动。
+  - 位移是 `Transform.translate`（**绘制期**变换，不触发布局），驱动它的是
+    `ValueNotifier<double>`（元信息）/ `AnimationController`（顶底栏）+ `AnimatedBuilder`，
+    **不 `setState`** —— 重建会把正文 WebView 带着重排。
+  - 文档重载（首次进入 / 换主题）会把 WebView 滚动归零，故 `onCoverChanged(true)` 时把元信息
+    偏移、方向锚点、顶底栏动画一起归零，否则它们停在「已收起」而正文其实回到了起点。
+  - 排查用的日志：`MailHtmlView` 在 debug 下打 `load`（viewport / layoutScale / 留白）与
+    每条滚动回报（`raw → logical`，嫌吵把 `kLogMailScroll` 改 false）；详情页打三条浮层实测高
+    与顶 / 底栏每次收放翻转（`顶/底栏 收起 @ y=…`）。
+- **浮层高度是实测的，量准了才建正文**：留白要写进 HTML 文档（改了 = 重载 WebView），故三条
+  浮层各挂 `GlobalKey`、帧末量一次实高（字号 / 转屏 / 附件出现都会改变它），量到再建正文；
+  元信息内容一变就先 `_bodyReady = false`。**懒取全文与附件列表因此合成一次等待、一次
+  `setState`** —— 附件摘要行属于元信息，分两次落地就会「建完正文又重载」。
+  展开的附件列表**不计入留白**（否则一展开就重载），它是盖在正文上、自带底色与内部滚动的
+  披露面板。
+- **滚动条**：WebView 的原生滚动条关掉（`setVerticalScrollBarEnabled(false)` / 横向同理，
+  两个平台都支持，调用前问 `supportsSetScrollBarsEnabled()`）。邮件自带内层滚动容器由文档里
+  的 `::-webkit-scrollbar{width:0;height:0}` 关（主视口那条是原生绘制，CSS 管不到）。
 - **宽度**：`htmlDeclaredWidth` 推断出的声明宽度超过屏宽时，视口写成 `width=<声明宽度>`，
   由浏览器整体缩到屏宽作为**初始适配**（引擎重绘、清晰；之后可双指放大）。
+  `layoutScale = 屏宽 / 声明宽` 只用来反向放大占位高度（见上），**不用于滚动折算**。
   **坑：`webview_flutter_android` 默认 `useWideViewPort = false`，会忽略 `viewport` meta** ——
   于是按屏宽排版、无视声明宽度，写死 600px 的邮件会横向溢出。必须显式
   `AndroidWebViewController.setUseWideViewPort(true)`（故直接依赖了 `webview_flutter_android`）。
@@ -268,34 +273,38 @@ HTML 正文交给**系统 WebView**（`webview_flutter`，iOS WKWebView / Androi
     而 body 在反色层**外面**，照办就是暗页面上一大块白。
   - 已知取舍：白底 logo 仍是白块、元素的 `background-image` 会被反色、深底设计的邮件会被
     反成亮底。要改姿态只动 `_kDarkFilter` 一处。
+  - 另压掉邮件写给 `html/body` 的 `height:100%` / `overflow:hidden`（那是给桌面客户端整页
+    布局用的，照办会把正文压成一屏高），用 `!important` 覆盖。
 - **加载遮罩（治暗色下的白闪）**：WebView 在文档 CSS 生效前会画自己的默认白底 ——
   `setBackgroundColor(palette.background)` 挡不干净，暗色主题下就是一下白闪。故 WebView
-  上面盖一层 `palette.background` 的遮罩（`Stack` + `Positioned.fill`），**「文档加载完 +
-  已量到高度」再压 `_kRevealSettle = 140ms` 才淡出**（`kRevealDuration = 240ms`），
-  露出来就是最终版式。
+  上面盖一层 `palette.background` 的遮罩（`Stack` + `Positioned.fill`），`onPageFinished`
+  后压 `_kRevealSettle = 140ms`（留给首帧上纹理）再淡出（`kRevealDuration = 240ms`）。
+  有 `_kRevealDeadline = 1500ms` 兜底，远程图片吊着 `onPageFinished` 也不至于永远盖着。
+  **不再参与任何高度计算**（有界视口无需占位高度）。
   - **遮罩只画底色，转圈由详情页画**：整段等待（懒取全文 → 正文渲染）只能有一个转圈，
     见 §4.7。遮罩起落用 `onCoverChanged(bool)` 通知宿主，宿主的转圈按同一时长
     （`MailHtmlView.kRevealDuration`）一起淡出。**通知要排到帧末** —— 一个调用点是
     `didChangeDependencies`（换主题重载），此刻宿主正在构建，直接回调会撞上
     「setState() called during build」。测试环境没有平台视图、根本没有遮罩，
     那条分支要立刻回报 `false`，否则宿主的转圈永远挂着（`pumpAndSettle` 直接超时）。
-  - **遮罩期间盒子至少占满 `viewportHeight`**（详情页传进来的内容区可见高度）：免掉
-    「先给一段短占位、量到高度再跳一次版式」（那是 `_kInitialHeight = 160` 的旧账，已删）。
-    **淡完**（`_coverGone`，靠 `_cover` 的状态监听）才把盒子交回实测高度 —— 用「开始淡出」
-    的话，实测高度比一屏矮的短邮件会在淡出**期间**收盒子，WebView 视口跟着变小、文档重排，
-    那一下正好透过半透明的遮罩被看见。量不到高度就退回一屏高。
-  - 那 140ms 是留给合成的：`onPageFinished` 只说明文档加载完，WebView 把带样式（暗色下还带
-    反色滤镜）的首帧真正画到纹理上还要一两帧，早淡出就露出中间态。
-  - 淡出**只排一次**（`_revealScheduled`）—— 图片是陆续到的，每次高度增长都重排定时器会把
-    淡出一路推到兜底时间。
   - **淡的是这层 Flutter 覆盖层，不是 WebView 的 `opacity`**：平台视图的透明度在 iOS 上
     不保证生效（embedder 只稳定支持裁剪与变换）。
-  - **有兜底**：`_kRevealDeadline = 1500ms` 一到无条件淡出 —— 量高三条路全失败、或远程图片
-    把 `onPageFinished` 吊住时，绝不能把正文永远盖着。换主题重载文档时遮罩重新盖上。
+- **全屏化（无外层 `SafeArea`）**：内容直接顶到屏幕上下边缘。顶区/底栏各在内部补安全区
+  padding（`MediaQuery.paddingOf` 的 top/bottom），背景随之盖住状态栏 / 底部安全区 ——
+  任何时刻不露背景带（用户反馈「状态栏和底部安全区有边框遮挡」）。收起后正文占满整屏。
+  状态栏图标样式走 `main.dart` 的 `SystemUiOverlayStyle`。
 - **测试**：widget 测试环境没有平台视图，`MailHtmlView` 检测到 `WebViewPlatform.instance == null`
-  就降级成 `MailHtmlUnavailable`（挂着生成好的文档供断言）。所以**HTML 正文在测试里不渲染、高度为 0**，
-  要撑出滚动距离的用例必须用纯文本长邮件；多指手势、纹理尺寸、Hybrid Composition、原生滚动条
-  都碰不到，**缩放与变形 / 卡死只能真机验**。
+  就降级成 `MailHtmlUnavailable`（挂着生成好的文档供断言）。所以**HTML 正文在测试里不渲染**，
+  HTML 路径的滚动 / 浮层位移只能真机验；收放行为用**纯文本长邮件**走
+  `SingleChildScrollView` 验证：`ScrollController` 逐点 `jumpTo`，断言元信息矩形随偏移逐像素
+  对应（滑 12 就移 12）、顶 / 底栏在 <24 时**一动不动**、够 24 后**整条**出画、回滑 8 仍保持
+  收起、回滑 15 就整条切回来（且 y 仍 >0，即不必滚回顶部），以及正文留白正好等于
+  「顶栏 + 元信息」。
+  缩放、原生滚动条、**滚动回报的单位**等平台行为都碰不到，**只能真机验**（2026-09-03 在
+  Android 模拟器上逐帧核过：顶部 / 中途 / 触底 / 滚回顶四态 + 宽版与普通两封邮件）。
+  真机核对留白是否正确的办法：日志里 `正文留白 top=X`，把正文滚到 `y≈X`，此刻邮件正文的
+  第一个像素应该正好在屏幕 y=0（若邮件自己带一大段头部空白，就还要减掉那段 —— 换一封
+  正文紧贴开头的邮件对照即可，我们踩过这个误判）。
 
 ### 5.6 新建邮件页的收件人三栏
 
@@ -309,10 +318,11 @@ HTML 正文交给**系统 WebView**（`webview_flutter`，iOS WKWebView / Androi
   `Wrap`**：`Wrap` 给每个孩子的 maxWidth 都是**整行宽**，而 `TextField` 会铺满拿到的宽度
   —— 于是只要前面有一枚胶囊就挤不下，输入框（连光标）被整体推到下一行，表现为
   **收件人在这一行、光标在下一行**。`_ChipsInput` 让胶囊按行流下去，**最后一格（输入框）
-  拿当前行的余量**（不足 `_kMinInputWidth = 72` 才另起一行、占满整行），光标便紧跟在最后
+  拿当前行的余量**（不足 `_kMinInputWidth = 40` 才另起一行、占满整行），光标便紧跟在最后
   一枚胶囊后面；输入框铺满行尾余量，顺带让胶囊右边那片空白也能点出光标。
   代价：地址长过余量时在框内横向滚动，不再独占一整行。折叠态输入框留在树上但不参与排版
-  （零尺寸摆原点，`Offstage` 本来也不画它）。
+  （零尺寸摆原点，`Offstage` 本来也不画它）。阈值曾为 72，真机上地址稍长（行尾还剩
+  40~70px）就被误判换行 —— 用户反馈「后方还有空间、光标却换行了」，收紧到 40（≈5 字符）。
 - **抄送 / 密送整行的显隐**：`_ccBccOpen = 用户点过折叠行(_ccBccExpanded) || 抄送密送非空`。
   抄送密送都空且没点开时，三行折叠成一行「抄送/密送, 发件人：<账号>」；**点这一行**（整行
   是个 `GestureDetector`，= 设计稿的「发件人」列）才展开抄送 / 密送 / 发件人三行。
@@ -337,13 +347,27 @@ HTML 正文交给**系统 WebView**（`webview_flutter`，iOS WKWebView / Androi
   提示卡走 **`Overlay` + `LayerLink`**：排进 `Column` 会把下面几行往下顶，每敲一个字表单
   都跳一次。它不受视口裁剪，故滚动时（`ScrollUpdateNotification`）主动收掉。
   `LayerLink` 贴的是**整块收件人内容区**（`_ChipsInput`）而不是输入框 —— 输入框只占行尾
-  余量，贴它会得到一张又窄又从行中间起头的卡片。
+  余量，贴它会得到一张又窄又从行中间起头的卡片。提示卡**外观与胶囊菜单一致**（同一套
+  底色 `palette.background` + 圆角 12 + 四周发散阴影 + 15 号字），保证所有浮层观感统一。
 - **点胶囊**弹「删除 / 编辑 / 移至抄送 / 移至密送」（`showMenu` 贴着被点的那一枚）。
   **样式与首页右上角「导入 / 设置」菜单一致**（同一份 `AppMenuRow` / `AppMenuDivider`，
   见 `lib/widgets/app_menu.dart`）：底色 `palette.background` + 圆角 12 + 四周发散阴影，
   选项「图标 + 文案」高 52 / 左右 20 边距 / 15 号字 / 字距 1.5，细线分隔缩进 20。
+  收件人输入提示卡（`_SuggestionCard`）与重要性下拉（`PopupMenuButton`）同样走这套样式。
+  菜单项（胶囊菜单 + 重要性下拉）用自绘的 `_FlatMenuEntry`（复刻 `PopupMenuItem` 布局，
+  但**点击用 `GestureDetector`，没有任何按压 / 水波纹 / 悬停反馈**）：SDK 的
+  `PopupMenuItem` 内部硬编码一个 `InkWell`，按压底色取 `Theme.highlightColor`（默认近
+  40% 黑）且不暴露参数、菜单又在独立 route 里包不住 Theme —— 点按选项会浮一块**方形深
+  底**，故自绘去底。起初用「`InkWell` + 三个反馈色全透明」，但重要性下拉在真机上点按
+  仍会浮出一层底色（InkWell 的反馈还受 `focusColor` 等其它 Material 态影响），干脆连
+  `InkWell` 都不用。
+  重要性下拉**刻意不传 `initialValue`**：SDK 会给选中项整项铺一块 `Theme.highlightColor`
+  的**方形**底色（`ColoredBox`，菜单默认不裁剪，圆角失效、色偏深）。选中态自己在
+  `itemBuilder` 里画 —— 主色淡底 `primary @10%` + 圆角 8 的圆角块。
   「移至」只列另外两栏；「编辑」= 删胶囊 + 把地址放回输入框。同一地址在三栏间唯一
   （`ComposeContact` 按地址大小写不敏感判等）。
+- **表单行无分隔线**：`_FieldRow` 不画边框，各行间留白分隔（曾有一条 1px 底部线，已按用户
+  要求移除）。
 - **发件人行只读**：本页从某账号的邮件列表进来，`sendMail` 也用这个账号鉴权，故设计稿上
   那个 ▾ 没做成账号切换（换发件人要换 token / 可能撞上未授权 `Mail.Send`）。
 - 抄送 / 密送随发信一起下发（`MailApi.sendMail` 的 `cc` / `bcc` → Graph
@@ -443,7 +467,7 @@ api-test/                   Node 换 token 脚本（gitignore，不入库）
 
 ### 9.1 提交前必做
 1. `flutter analyze` —— 必须**零问题**。
-2. `flutter test` —— 全量通过（当前 153 个用例，随功能增减）。
+2. `flutter test` —— 全量通过（当前 158 个用例，随功能增减）。
 3. 改了 arb 文案 → `flutter gen-l10n`。
 4. 尽快 commit（历史上曾整套 MVP 文件丢失、无 commit，务必防再次丢失）。
 

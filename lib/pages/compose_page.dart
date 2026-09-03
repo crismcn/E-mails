@@ -534,16 +534,16 @@ class _ComposePageState extends State<ComposePage> {
   }
 
   /// 胶囊菜单的一项 —— 图标 + 文案，尺寸与首页「导入 / 设置」菜单一致（高 52、
-  /// 左右 20 边距），颜色随主题自适应。
-  PopupMenuItem<_ChipAction> _chipMenuItem(
+  /// 左右 20 边距），颜色随主题自适应。用 [_FlatMenuEntry]：点按时不浮方形按压底色。
+  _FlatMenuEntry<_ChipAction> _chipMenuItem(
     _ChipAction action,
     IconData icon,
     String label,
     AppPalette palette,
   ) {
-    return PopupMenuItem<_ChipAction>(
+    return _FlatMenuEntry<_ChipAction>(
       value: action,
-      height: 52,
+      entryHeight: 52,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       child: AppMenuRow(icon: icon, label: label, color: palette.textPrimary),
     );
@@ -1128,16 +1128,35 @@ class _ComposePageState extends State<ComposePage> {
     TextStyle style,
   ) {
     return PopupMenuButton<MailImportance>(
-      initialValue: _importance,
-      color: palette.card,
+      // 刻意不传 initialValue：SDK 会给选中的那项整项铺一块 `Theme.highlightColor`
+      // 的**方形**底色（`ColoredBox`，菜单不裁剪，圆角失效、色也偏深）。选中态
+      // 自己在 itemBuilder 里画 —— 圆角 + 主色淡底。
+      // 背景 / 阴影 / 圆角与胶囊菜单一致（`_openChipMenu`），保证所有浮层观感统一。
+      color: palette.background,
+      surfaceTintColor: palette.background,
+      elevation: 20,
+      shadowColor: const Color(0x4B000000),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       onSelected: (value) => setState(() => _importance = value),
       itemBuilder: (context) => <PopupMenuEntry<MailImportance>>[
         for (final value in MailImportance.values)
-          PopupMenuItem<MailImportance>(
+          // [_FlatMenuEntry]：点按时不浮方形按压底色。
+          _FlatMenuEntry<MailImportance>(
             value: value,
-            child: Text(
-              value.label(l10n),
-              style: TextStyle(color: palette.textPrimary, fontSize: 15),
+            entryHeight: 48,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: value == _importance
+                  ? BoxDecoration(
+                      color: palette.primary.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(8),
+                    )
+                  : null,
+              child: Text(
+                value.label(l10n),
+                style: TextStyle(color: palette.textPrimary, fontSize: 15),
+              ),
             ),
           ),
       ],
@@ -1583,7 +1602,63 @@ class _RichBodyController extends TextEditingController {
   }
 }
 
-/// 表单行 —— 左侧灰色标签 + 内容区 + 可选尾部按钮，底部一条 1px 分隔线。
+/// 无按压底色的菜单项 —— 复刻 `PopupMenuItem` 的布局（高 / 内边距 / 左对齐），但
+/// 点击直接用 `GestureDetector`，没有任何 Material 按压 / 水波纹 / 悬停反馈。
+///
+/// SDK 的 `PopupMenuItem` 内部硬编码了一个 `InkWell`，按压底色取
+/// `Theme.of(context).highlightColor`（默认近 40% 黑）且不暴露参数；而菜单在独立
+/// route 里弹出，外面包 `Theme` 也盖不住它。故自绘一项：布局照旧，点按时无底色。
+/// 起初用「`InkWell` + 三个反馈色全透明」，但重要性下拉在真机上点按仍会浮出一层
+/// 底色（`InkWell` 的反馈还受 `focusColor` 等其它 Material 态影响），干脆连
+/// `InkWell` 都不用 —— `GestureDetector` 只管手势、什么都不画。
+class _FlatMenuEntry<T> extends PopupMenuEntry<T> {
+  const _FlatMenuEntry({
+    required this.value,
+    required this.entryHeight,
+    required this.padding,
+    required this.child,
+  });
+
+  final T value;
+  final double entryHeight;
+  final EdgeInsetsGeometry padding;
+  final Widget child;
+
+  @override
+  double get height => entryHeight;
+
+  @override
+  bool represents(T? candidate) => candidate == value;
+
+  @override
+  State<_FlatMenuEntry<T>> createState() => _FlatMenuEntryState<T>();
+}
+
+class _FlatMenuEntryState<T> extends State<_FlatMenuEntry<T>> {
+  @override
+  Widget build(BuildContext context) {
+    // 点击直接 `Navigator.pop` —— 没有 `InkWell`，就不会有任何按压 / 水波纹 / 悬停底色。
+    return Semantics(
+      button: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => Navigator.pop(context, widget.value),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: widget.height),
+          child: Padding(
+            padding: widget.padding,
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: widget.child,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 表单行 —— 左侧灰色标签 + 内容区 + 可选尾部按钮（无边框，行间不再有分隔线）。
 ///
 /// **每一行都要带稳定的 key**（见 `_buildFields`）：抄送 / 密送整行会随交互增删，行数一变，
 /// 无 key 的兄弟节点就按下标重新配对 —— 主题那行的 `EditableText` 会被当成另一个 widget
@@ -1607,9 +1682,6 @@ class _FieldRow extends StatelessWidget {
     return Container(
       constraints: const BoxConstraints(minHeight: 54),
       padding: EdgeInsets.fromLTRB(20, 0, trailing == null ? 20 : 8, 0),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: palette.divider, width: 1)),
-      ),
       child: Row(
         children: [
           Text(
@@ -1657,7 +1729,11 @@ class _ChipsInput extends MultiChildRenderObjectWidget {
 /// 胶囊之间的横向间距 / 行距，以及行尾输入框的最小可用宽度。
 const double _kChipSpacing = 8;
 const double _kChipRunSpacing = 6;
-const double _kMinInputWidth = 72;
+
+/// 行尾余量低于它才让输入框另起一行。要「有空间就跟在胶囊后面」，阈值不能太大：
+/// 72 时真机上地址稍长（行尾还剩 40~70px）就会误判换行 —— 用户眼里「后方还有空间，
+/// 光标却换行了」。降到 40（≈5 个字符宽，仍够看清正在敲的字，再窄就该换行了）。
+const double _kMinInputWidth = 40;
 
 class _ChipsInputParentData extends ContainerBoxParentData<RenderBox> {}
 
@@ -1831,9 +1907,12 @@ class _SuggestionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     return Material(
-      color: palette.card,
-      elevation: 8,
-      borderRadius: BorderRadius.circular(20),
+      // 背景 / 阴影 / 圆角与胶囊菜单一致（`_openChipMenu`），保证所有浮层观感统一。
+      color: palette.background,
+      surfaceTintColor: palette.background,
+      elevation: 20,
+      shadowColor: const Color(0x4B000000),
+      borderRadius: BorderRadius.circular(12),
       clipBehavior: Clip.antiAlias,
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1853,7 +1932,8 @@ class _SuggestionCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: palette.textPrimary,
-                        fontSize: 17,
+                        // 字号与胶囊菜单一致（15）；仍靠 w600 区分主次。
+                        fontSize: 15,
                         fontWeight: FontWeight.w600,
                       ),
                     ),

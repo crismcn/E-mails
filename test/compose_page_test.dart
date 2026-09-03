@@ -170,9 +170,11 @@ void main() {
   });
 
   testWidgets('收件人光标紧跟胶囊：行尾余量够就同一行，不够才另起一行', (WidgetTester tester) async {
-    // 测试字体每个字都是 fontSize 见方（比真机字体宽近一倍），故把屏幕放宽到 480 逻辑
-    // 像素，让「一枚胶囊 + 输入框」的行尾余量与真机上的观感一致。
-    await _pumpComposeOnly(tester, screenWidth: 1440);
+    // 测试字体每个字都是 fontSize 见方（比真机字体宽近一倍）。screenWidth 是物理
+    // 像素（÷dpr 3 才是逻辑宽），取 1260 → 逻辑 420，正好落在「一枚胶囊 + 输入框
+    // 同排、两枚胶囊把行尾余量挤破最小可用宽度（40）而换行」的区间 —— 比原 1440 更
+    // 贴真机：那宽度下两枚胶囊后余量仍上百，阈值收紧后不再换行，断言会失准。
+    await _pumpComposeOnly(tester, screenWidth: 1260);
     await _typeRecipient(tester, 'to', 'a@b.com');
 
     Rect chipOf(String label) => tester.getRect(

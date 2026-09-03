@@ -1,19 +1,22 @@
-import 'dart:math';
-
 import 'mail_mapper.dart' show htmlDeclaredWidth;
 
-/// 正文度量回报用的 JS 通道名 —— WebView 侧 `MailMetrics.postMessage("高度,能否内部滚动")`。
-const String kMailMetricsChannel = 'MailMetrics';
-
-/// 页内挂在 `window` 上的度量函数名 —— 宿主兜底时直接
-/// `runJavaScriptReturningResult('$kMailMetricsProbe()')`，量法与主动回报完全一致。
-const String kMailMetricsProbe = 'mailMetrics';
-
-/// 正文外层包一层自己的容器 —— 量高度以它为准，也便于用 CSS 压掉邮件给 `body` 的
+/// 正文外层包一层自己的容器 —— 也便于用 CSS 压掉邮件给 `body` 的
 /// `height:100%` / `overflow:hidden`（那是给桌面客户端整页布局用的）。
 const String kMailRootId = 'mail-root';
 
-/// 邮件正文渲染成的一整份 HTML 文档（含视口、CSP、注入样式与量高脚本）。
+/// 给详情页浮层让位的两块占位 —— 正文前后各一个我们自己的空 div。
+///
+/// **刻意不用 `body` 的 `padding`**：邮件普遍自带 `<body style="margin:0;padding:0">`
+/// （嵌套 body 标签被解析器丢弃、属性并到文档 body 上），内联样式压过我们的样式表，
+/// 留白当场归零 —— 真机上表现为正文顶到屏幕最上、元信息与正文糊在一起（已复现）。
+/// 占位换成独立元素后按 **id 选择器 + `!important`** 定高，邮件那边除了猜中同一个 id
+/// 否则压不动（`div{}` / `*{}` 的特异度都更低）。
+const String kMailTopPadId = 'mail-pad-top';
+const String kMailBottomPadId = 'mail-pad-bottom';
+
+/// 邮件正文渲染成的一整份 HTML 文档（含视口、CSP、注入样式）。
+///
+/// 不再有内联脚本 —— 正文 WebView 现在是有界视口自己滚动，不需要量高回报。
 class MailHtmlDocument {
   const MailHtmlDocument({required this.html, required this.layoutScale});
 
@@ -23,16 +26,17 @@ class MailHtmlDocument {
   /// 排版宽度到屏幕宽度的缩放比（≤1）。
   ///
   /// 非响应式邮件（写死 `<table width="600">`）按 600 的「虚拟视口」排版、由浏览器
-  /// 整体缩到屏宽，于是 JS 量到的 CSS 像素高度要乘这个比例才是**实际占屏高度**。
+  /// 整体缩到屏宽，于是文档里的 CSS 像素乘这个比例才是**实际占屏尺寸**。唯一用途是把
+  /// chrome 让位的占位高度**反向放大**后写进 CSS（`逻辑像素 / layoutScale`），
+  /// 不参与任何盒子高度计算。
   ///
-  /// 它只跟这封邮件的排版有关，**与用户双指缩放无关** —— 盒子高度一旦按它定死就不再
-  /// 变（曾按 `visualViewport.scale` 重新定高，缩放比能到 10、盒子被撑成几万像素，
-  /// 一放大就闪退）。放大后看溢出部分靠 WebView 内部平移。
+  /// **不要拿它折算 WebView 回报的滚动偏移** —— 那个回报是「视图空间」的量（Android
+  /// 设备像素 / iOS point），本就含了页面缩放，详见 `MailHtmlView` 的 `_scrollUnit`。
   final double layoutScale;
 }
 
-/// `<script>` 整块 —— CSP 只放行带 nonce 的那段，这里再把邮件自带的物理删一遍
-/// （多一层，不指望正则万无一失）。
+/// `<script>` 整块 —— CSP `script-src 'none'` 地挡一遍，这里再把邮件自带的物理删一遍
+/// （多一层，不指望 CSP 万无一失）。
 final RegExp _kScriptBlock = RegExp(
   r'<script\b[^>]*>[\s\S]*?</script\s*>|<script\b[^>]*/?>',
   caseSensitive: false,
@@ -50,24 +54,28 @@ bool isSafeMailLink(String url) {
 
 /// 把邮件正文 HTML 包成一份可安全渲染的完整文档。
 ///
-/// **正文 WebView 按这份文档渲染完的高度占位、自己不滚**，与上方收件人 / 主题 / 附件
-/// 共用页面那一条滚动条；故这里需要一段量高脚本把高度回报给宿主。见 `MailHtmlView`。
+/// **正文 WebView 是有界视口自己滚动 + 双指缩放**，不再需要量高脚本，故 CSP 直接
+/// `script-src 'none'`，无需 nonce / JS 通道。
 ///
 /// 安全姿态（正文是**发件人可控**的内容，按敌意输入对待）：
 /// - `<meta http-equiv="Content-Security-Policy">` 只放开图片 / 内联样式 / 字体，
-///   脚本仅允许带 [nonce] 的那一段（也就是下面量高度用的那几行）。邮件自带的
-///   `<script>`、内联 `onclick=`、`<iframe>`、表单提交、`<base>` 全部被挡。
-///   多份 CSP 是**取交集**执行的，正文里再塞一份宽松策略也放不开。
-/// - [nonce] 必须每份文档随机重生成：固定值等于把白名单告诉发件人。
+///   脚本、`<iframe>`、表单提交、`<base>` 全部被挡。多份 CSP 取交集执行，正文里
+///   再塞一份宽松策略也放不开。
 /// - 另外物理删掉 `<script>` 整块，作为 CSP 之外的第二道。
 /// - 远程图片照旧会加载（和换 WebView 之前一样），也就是跟踪像素照旧能打点；
-///   要拦得改成「点按钮才显示图片」，那是另一个功能。
+///   要拦得做成「点按钮才显示图片」，那是另一个功能。
 ///
 /// 排版：
 /// - 声明宽度（[htmlDeclaredWidth]）超过 [viewportWidth] 时，视口按声明宽度铺开，
 ///   由浏览器整体缩到屏宽作为**初始适配**（引擎重绘，比 Flutter 侧等比压扁清晰）。
-/// - 不写 `user-scalable=no`，双指缩放可用（在固定高度的盒子内缩放 + 平移）。
+/// - 不写 `user-scalable=no`，双指缩放可用。
 /// - 长串不可断的 URL 靠 `overflow-wrap: anywhere` 折行，不撑出横条。
+/// - [topPadding] / [bottomPadding]（**逻辑像素**）是给详情页那几条 chrome 让出的空间：
+///   WebView 铺满真实全屏、顶栏 / 元信息 / 底栏都浮在它上面，正文靠正文前后两块占位
+///   （[kMailTopPadId] / [kMailBottomPadId]）起头收尾，于是「整体上移」就等于「正文自己
+///   往上滚」——**WebView 一次都不用动、不用改尺寸**。
+///   写进 CSS 前要**除以 [MailHtmlDocument.layoutScale]**：宽版邮件在 600 的虚拟视口里
+///   排版后被整体缩放，直接写逻辑像素会缩水成 `padding × layoutScale`。
 ///
 /// 配色：[dark] 时**正文容器**（`#mail-root`）做反色（`invert` + `hue-rotate`），图片再反
 /// 一次抵消 —— 邮件都是按白底黑字写的，这样能在不猜发件人配色的前提下保证文字始终可读，
@@ -75,22 +83,24 @@ bool isSafeMailLink(String url) {
 /// 写成 App 底色、**不参与反色**，否则滤镜生效前会闪一帧近白。
 MailHtmlDocument buildMailHtmlDocument(
   String body, {
-  required String nonce,
   required double viewportWidth,
   required bool dark,
   required String backgroundHex,
+  double topPadding = 0,
+  double bottomPadding = 0,
 }) {
   final declared = htmlDeclaredWidth(body);
   final wide = declared > viewportWidth && viewportWidth > 0;
   final viewport = wide
       ? 'width=${declared.round()}'
       : 'width=device-width, initial-scale=1';
+  final scale = wide ? viewportWidth / declared : 1.0;
   // 暗色下页面底色**直接写 App 底色**，不再靠反色滤镜去凑（那样得先写近白色的
   // #f5f2ed，而浏览器先画背景、后合成滤镜 —— 中间几帧就是一下白闪）。
   final pageBackground = dark ? backgroundHex : '#ffffff';
 
   return MailHtmlDocument(
-    layoutScale: wide ? viewportWidth / declared : 1,
+    layoutScale: scale,
     html:
         '<!DOCTYPE html><html><head>'
         '<meta charset="utf-8">'
@@ -100,29 +110,28 @@ MailHtmlDocument buildMailHtmlDocument(
         "style-src 'unsafe-inline'; "
         'font-src * data:; '
         'media-src * data:; '
-        "script-src 'nonce-$nonce'; "
+        "script-src 'none'; "
         "frame-src 'none'; object-src 'none'; "
         "form-action 'none'; base-uri 'none'"
         '">'
         '<meta name="viewport" content="$viewport">'
-        '<style>${_style(dark: dark, background: pageBackground)}</style>'
+        '<style>'
+        '${_style(dark: dark, background: pageBackground, top: topPadding / scale, bottom: bottomPadding / scale)}'
+        '</style>'
         '</head><body>'
+        '<div id="$kMailTopPadId"></div>'
         '<div id="$kMailRootId">${body.replaceAll(_kScriptBlock, '')}</div>'
-        '<script nonce="$nonce">${_heightProbe()}</script>'
+        '<div id="$kMailBottomPadId"></div>'
         '</body></html>',
   );
 }
 
-/// 生成一次性 nonce —— 走 [Random.secure]，发件人猜不到就没法让自己的脚本过 CSP。
-String mailHtmlNonce() {
-  final rnd = Random.secure();
-  return List<String>.generate(
-    16,
-    (_) => rnd.nextInt(16).toRadixString(16),
-  ).join();
-}
-
-String _style({required bool dark, required String background}) =>
+String _style({
+  required bool dark,
+  required String background,
+  required double top,
+  required double bottom,
+}) =>
     ':root{color-scheme:light}'
     // 暗色下这条底色是**防白闪的关键**，必须压得住邮件自带的 `html{background:#fff}`。
     'html{background:$background${dark ? '!important' : ''};'
@@ -130,6 +139,14 @@ String _style({required bool dark, required String background}) =>
     'body{margin:0;padding:12px 16px;color:#111;'
     'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;'
     'font-size:16px;line-height:1.55;overflow-wrap:anywhere}'
+    // 给浮层让位的两块占位（见 kMailTopPadId）。写死 `!important` 且用 id 选择器，
+    // 邮件的 `div{}` / 内联 body 样式都压不动它。`clear:both` 防被未清除的浮动吃掉。
+    '#$kMailTopPadId,#$kMailBottomPadId{display:block!important;'
+    'width:auto!important;margin:0!important;padding:0!important;'
+    'border:0!important;background:transparent!important;clear:both!important;'
+    'min-height:0!important;max-height:none!important;overflow:hidden!important}'
+    '#$kMailTopPadId{height:${top.toStringAsFixed(1)}px!important}'
+    '#$kMailBottomPadId{height:${bottom.toStringAsFixed(1)}px!important}'
     // 不少邮件给 html/body 写 `height:100%` 或 `overflow:hidden`（原本是给
     // 桌面客户端的整页布局用的），照办的话正文会被压成一屏高、后面全没了。
     // `!important` 压得住邮件里后写的普通声明。
@@ -162,46 +179,3 @@ const String _kDarkFilter =
     // 暗色下底色一律由 html 提供。
     'body{background:transparent!important}'
     'img,video,picture,svg,canvas{filter:invert(1) hue-rotate(180deg)}';
-
-/// 量正文高度、并顺带告诉宿主「WebView 内部现在还能不能纵向滚」。
-///
-/// 高度取 `#mail-root` / `body` / `documentElement` 三种量法的**最大值**：邮件可能给
-/// `body` 写死高度、可能整封浮动（父元素高度塌成 0）、也可能被 `overflow` 裁掉。
-/// 少量一种就会把长邮件截断，宁可多算一点空白。图片是后到的，故 `ResizeObserver`
-/// + 轮询持续跟。
-///
-/// 「能不能内部滚」= 内容高度是否超过**可视视口**（`visualViewport.height`，双指放大
-/// 后它会变小）。宿主拿它决定单指拖动归谁：能内滚就归 WebView（放大后够得着下半截 /
-/// 超高被截顶的邮件也能读全），不能内滚就归外层页面（整页一起上滑）。
-///
-/// **刻意不回报缩放比去改盒子高度**：那条路上盒子会被撑成几万像素，一放大就闪退。
-/// 这里回报的高度与缩放无关，缩放只影响那个布尔量，宿主收到它不重建界面。
-String _heightProbe() =>
-    '(function(){var lastH=-1;var lastS=-1;'
-    'function measure(){var r=document.getElementById("$kMailRootId");'
-    'var d=document.documentElement;var b=document.body;var h=0;'
-    'if(r){h=Math.max(h,r.scrollHeight,r.getBoundingClientRect().bottom);}'
-    'if(b){h=Math.max(h,b.scrollHeight);}'
-    'if(d){h=Math.max(h,d.scrollHeight);}'
-    'return Math.ceil(h);}'
-    'function view(){var v=window.visualViewport;'
-    'return v?v.height:document.documentElement.clientHeight;}'
-    'function metrics(){var h=measure();'
-    'return h+","+((h-view())>2?1:0);}'
-    'function report(){var h=measure();var s=(h-view())>2?1:0;'
-    'if(h<=0||(h===lastH&&s===lastS)){return;}lastH=h;lastS=s;'
-    '$kMailMetricsChannel.postMessage(h+","+s);}'
-    'window.$kMailMetricsProbe=metrics;'
-    'report();window.addEventListener("load",report);'
-    'if(window.ResizeObserver){var ro=new ResizeObserver(report);'
-    'ro.observe(document.documentElement);'
-    'var r=document.getElementById("$kMailRootId");if(r){ro.observe(r);}}'
-    // 双指缩放 / 平移会改可视视口 —— 只有那个布尔量会变，宿主不重建界面，
-    // 所以这里监听是安全的（历史上是「按缩放比重新定高」才炸的）。
-    'if(window.visualViewport){'
-    'window.visualViewport.addEventListener("resize",report);'
-    'window.visualViewport.addEventListener("scroll",report);}'
-    // 图片没有 load 事件冒泡到 window 的保障（缓存命中时可能早于监听），
-    // 再补几拍轮询兜底。
-    'var n=0;var t=setInterval(function(){report();if(++n>10){'
-    'clearInterval(t);}},300);})();';

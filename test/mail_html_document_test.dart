@@ -4,21 +4,74 @@ import 'package:email_manager/data/mail_html_document.dart';
 
 /// 正文 WebView 那份包装文档 —— 纯函数，视口 / CSP / 消毒 / 反色都在这里定死。
 ///
-/// 这份文档里**只有量高那一段脚本**（带随机 nonce）：正文 WebView 按页内量到的高度
-/// 占位、自己不滚，宿主必须知道内容有多高。邮件自带的脚本一律进不来。
+/// 正文 WebView 是**有界视口自己滚动**的（不再量高撑盒子），故这份文档里**没有任何
+/// 脚本**（CSP `script-src 'none'`），邮件自带的脚本一律进不来。
 void main() {
   MailHtmlDocument build(
     String body, {
     double viewportWidth = 360,
     bool dark = true,
-    String nonce = 'n0',
+    double topPadding = 0,
+    double bottomPadding = 0,
   }) => buildMailHtmlDocument(
     body,
-    nonce: nonce,
     viewportWidth: viewportWidth,
     dark: dark,
     backgroundHex: '#0a0d12',
+    topPadding: topPadding,
+    bottomPadding: bottomPadding,
   );
+
+  group('给浮层让位的上下留白', () {
+    test('留白是正文前后两块自己的占位 div，按 id 选择器 + !important 定高', () {
+      final doc = build('<p>x</p>', topPadding: 200, bottomPadding: 70);
+      // 结构：占位 → 正文容器 → 占位。
+      expect(
+        doc.html,
+        contains(
+          '<div id="$kMailTopPadId"></div>'
+          '<div id="$kMailRootId"><p>x</p></div>'
+          '<div id="$kMailBottomPadId"></div>',
+        ),
+      );
+      expect(doc.html, contains('#$kMailTopPadId{height:200.0px!important}'));
+      expect(doc.html, contains('#$kMailBottomPadId{height:70.0px!important}'));
+    });
+
+    test('刻意不用 body 的 padding —— 邮件的内联 body 样式会把它压成 0', () {
+      // 邮件普遍自带 <body style="margin:0;padding:0">，内联样式压过样式表，
+      // 留白当场归零（真机上正文顶到屏幕最上、和元信息糊在一起）。
+      final html = build('<p>x</p>', topPadding: 200).html;
+      expect(html, contains('padding:12px 16px'));
+      expect(html, isNot(contains('padding:212')));
+    });
+
+    test('不传就是零高占位，正文照原样起头', () {
+      final html = build('<p>x</p>').html;
+      expect(html, contains('#$kMailTopPadId{height:0.0px!important}'));
+      expect(html, contains('#$kMailBottomPadId{height:0.0px!important}'));
+    });
+
+    test('宽版邮件：留白要除以 layoutScale，才不会跟着整体缩放缩水', () {
+      // 600 声明宽 → 缩到 360，layoutScale = 0.6：200 逻辑像素的留白必须写成
+      // 333.3 CSS 像素，缩放后才正好占屏 200。
+      final doc = build(
+        '<table width="600"><tr><td>宽版</td></tr></table>',
+        topPadding: 200,
+        bottomPadding: 60,
+      );
+      expect(doc.layoutScale, closeTo(0.6, 1e-9));
+      expect(doc.html, contains('#$kMailTopPadId{height:333.3px!important}'));
+      expect(doc.html, contains('#$kMailBottomPadId{height:100.0px!important}'));
+    });
+
+    test('占位在 #mail-root 之外 —— 暗色下不参与反色，露的是 App 底色', () {
+      final html = build('<p>x</p>', dark: true, topPadding: 100).html;
+      expect(html, contains('#$kMailRootId{filter:invert(1)'));
+      expect(html, contains('background:transparent!important;clear:both!important'));
+      expect(html, contains('html{background:#0a0d12!important'));
+    });
+  });
 
   group('视口与缩放', () {
     test('响应式邮件按设备宽度铺开', () {
@@ -46,9 +99,9 @@ void main() {
   });
 
   group('安全姿态', () {
-    test('CSP 只放行带 nonce 的那段脚本，其余只放图片 / 内联样式 / 字体', () {
-      final html = build('<p>x</p>', nonce: 'abc123').html;
-      expect(html, contains("script-src 'nonce-abc123'"));
+    test('CSP 脚本全封（script-src none），其余只放图片 / 内联样式 / 字体', () {
+      final html = build('<p>x</p>').html;
+      expect(html, contains("script-src 'none'"));
       expect(html, contains("default-src 'none'"));
       expect(html, contains("object-src 'none'"));
       expect(html, contains("frame-src 'none'"));
@@ -59,19 +112,10 @@ void main() {
       expect(html, isNot(contains("script-src 'unsafe-inline'")));
     });
 
-    test('只有量高那一段脚本，且带上 nonce', () {
-      final html = build('<p>x</p>', nonce: 'abc123').html;
-      expect('<script'.allMatches(html).length, 1);
-      expect(html, contains('<script nonce="abc123">'));
-      expect(html, contains(kMailMetricsChannel));
-      // 放大后能不能在 WebView 内部滚 —— 靠可视视口高度判，与缩放比无关。
-      expect(html, contains('visualViewport'));
-      expect(html, isNot(contains('.scale')));
-    });
-
-    test('nonce 每份文档都换 —— 固定值等于把白名单告诉发件人', () {
-      expect(mailHtmlNonce(), isNot(mailHtmlNonce()));
-      expect(mailHtmlNonce(), hasLength(16));
+    test('整份文档没有任何 <script> —— 有界视口自滚，不需要量高脚本', () {
+      final html = build('<p>x</p>').html;
+      expect('<script'.allMatches(html).length, 0);
+      expect(html, isNot(contains('postMessage')));
     });
 
     test('邮件自带的 script 整块删掉（CSP 之外的第二道）', () {
@@ -83,8 +127,8 @@ void main() {
       expect(html, contains('<p>后</p>'));
       expect(html, isNot(contains('alert(1)')));
       expect(html, isNot(contains('evil')));
-      // 剩下的那一个是我们自己的量高脚本。
-      expect('<script'.allMatches(html).length, 1);
+      // 现在整份文档没有任何脚本（有界视口自滚，无需量高）。
+      expect('<script'.allMatches(html).length, 0);
     });
 
     test('链接协议白名单：只放 http/https/mailto/tel', () {
@@ -117,7 +161,8 @@ void main() {
       final html = build('<p>x</p>', dark: false).html;
       expect(html, isNot(contains('invert(1)')));
       expect(html, contains('html{background:#ffffff'));
-      expect(html, isNot(contains('background:transparent!important')));
+      // 那条「把邮件写给 body 的白底抹掉」只在暗色下需要（占位 div 的透明底不算）。
+      expect(html, isNot(contains('body{background:transparent!important}')));
     });
 
     test('长串不可断的文字会折行，不撑出横向滚动', () {
